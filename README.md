@@ -1,139 +1,152 @@
 # pi-design
 
-Pi 扩展：`/design <设计要求>` → 模型自主产出高保真 HTML 原型并自我迭代 → 本地浏览器人工审核 → 通过后以原型稿为规格实现目标技术栈 UI。
+A [Pi](https://github.com/earendil-works) extension that turns a design brief into shipped UI:
 
+`/design <brief>` → the model autonomously produces a high-fidelity HTML prototype and iterates on it → a human reviews it in a local browser → once approved, the prototype becomes the spec for implementing real UI in your target stack.
+
+```text
+BRIEF → PLAN → BUILD → SELF-REVIEW (≤3 rounds/screen) → REVIEW (human gate) ─┬→ rejected + feedback → BUILD
+                                                                             └→ approved → IMPLEMENT → done
 ```
-BRIEF → PLAN → BUILD → SELF-REVIEW(每屏≤3轮) → REVIEW(人工门) ─┬→ 驳回+意见 → BUILD
-                                                              └→ 通过 → IMPLEMENT → done
-```
 
-模型是唯一执行者；扩展只提供三个工具 + 一条审核回流通道，流程逻辑全部在 `extensions/prompt.ts` 的提示词状态机里。
+The model is the sole executor. The extension only provides three tools plus a review feedback channel — all workflow logic lives in the prompt state machine in `extensions/prompt.ts`.
 
-## 安装
+## Features
+
+- **Autonomous prototyping** — the model plans screens, builds each one as a standalone HTML file, screenshots it headlessly, critiques its own render, and fixes it (at most 3 self-review rounds per screen).
+- **Human gate as a hard boundary** — `design_review` returns `terminate: true`, so the agent stops after submitting for review instead of relying on model self-restraint.
+- **Review page that outlives the session** — the review server runs in a detached subprocess. The review URL stays reachable even after the session exits; decisions are persisted to disk and picked up by the next session.
+- **Stable review URL** — fixed default port (3374), a per-workflow token, so your browser tab stays valid across reject–revise–resubmit loops.
+- **DESIGN.md design system** — normalized design tokens in YAML front matter (aligned with the [Google Labs DESIGN.md spec](https://github.com/google-labs-code/design.md)), deterministically projected to `tokens.css`, with mechanical linting before the review gate opens.
+- **Multi-viewport self-check** — optional extra viewports so every screen is re-rendered and verified for responsive layout.
+- **Target-stack implementation** — the approved prototype is translated to React, SwiftUI, or plain web, using design tokens as the single source of truth.
+
+## Installation
 
 ```bash
-pi install git:github.com/<you>/pi-design@v0.1.0   # 或 npm:/local: 源
-# 开发期直载：
+pi install git:github.com/TengYangTuoHai/pi-design@v0.1.0   # or npm:/local: sources
+# For development, load directly:
 pi --extension ./extensions/index.ts
 ```
 
-依赖说明：
-- 运行时仅依赖 `playwright-core`（不含浏览器下载），优先用 `channel:"chrome"` 驱动系统已装的 Chrome/Edge；没有 Playwright 可用时自动退回裸 `chrome --headless --screenshot`（零依赖路径）。两者都没有时报错并提示安装 Chrome 或设置 `PI_DESIGN_CHROME`。
-- `@earendil-works/pi-coding-agent` 等宿主包由 Pi 提供，声明为 `peerDependencies`。
+Dependencies:
 
-## 用法
+- The only runtime dependency is `playwright-core` (no browser download). It prefers driving an already-installed Chrome/Edge via `channel: "chrome"`, and falls back to bare `chrome --headless --screenshot` (zero-dependency path) when Playwright's browser is unavailable. If neither exists, it errors with a hint to install Chrome or set `PI_DESIGN_CHROME`.
+- Host packages such as `@earendil-works/pi-coding-agent` are provided by Pi and declared as `peerDependencies`.
 
+## Usage
+
+```text
+/design a minimal login page: email + password + sign-in button   # start / reset the workflow (back to BRIEF)
+/design stop                                                      # end the workflow and disable the design tools
 ```
-/design 一个极简登录页：邮箱+密码+登录按钮     # 启动/重置工作流（回到 BRIEF）
-/design stop                                  # 结束工作流并停用 design 工具
-```
 
-工作流激活后，浏览器会弹出审核页（通过 / 驳回+意见）；也可以直接在会话里回复"通过"或意见——两者等价。审核结果作为用户消息回流会话，继续驱动状态机。
+While the workflow is active, the review page opens in your browser (approve / reject + feedback). You can also reply "approved" or your feedback directly in the chat — both are equivalent. The verdict flows back into the session as a user message and keeps driving the state machine.
 
-## 项目内约定（`.design/`）
+## Project conventions (`.design/`)
 
-```
+```text
 .design/
-  DESIGN.md          # 设计身份，遵循 Google DESIGN.md 格式规范（见下）
-  tokens.css         # 从 DESIGN.md front matter 确定性投影的 CSS 变量（派生产物）
-  config.json        # { "target": "swiftui"|"react"|"web", "viewport": [390,844], "viewports": [[768,1024]] }
-  state.json         # 工作流状态（扩展维护，断点续做）
-  review-server.json # 审核门运行信息（游离服务器存活期间；瞬态）
-  review-round-*.json# 审核结果落盘（等待会话拾取；瞬态）
+  DESIGN.md           # design identity, following the Google DESIGN.md spec (see below)
+  tokens.css          # CSS variables deterministically projected from the DESIGN.md front matter (derived)
+  config.json         # { "target": "swiftui"|"react"|"web", "viewport": [390,844], "viewports": [[768,1024]] }
+  state.json          # workflow state (maintained by the extension; enables resume)
+  review-server.json  # review gate runtime info (while the detached server lives; transient)
+  review-round-*.json # persisted review verdicts (waiting for the session to pick up; transient)
   prototype/
-    index.html       # 导航壳（iframe 各屏 + 桌面/手机框）
-    screens/*.html   # 一屏一文件
-  shots/             # 截图缓存（建议加入 .gitignore）
+    index.html        # navigation shell (iframes each screen + desktop/phone frames)
+    screens/*.html    # one file per screen
+  shots/              # screenshot cache (recommended to .gitignore)
 ```
 
-### DESIGN.md 格式规范（Google Labs）
+### The DESIGN.md spec (Google Labs)
 
-对齐 [google-labs-code/design.md](https://github.com/google-labs-code/design.md)：YAML front matter 承载**规范化设计 token**（colors / typography / rounded / spacing / components，组件值可用 `{colors.primary}` 引用），Markdown 正文按固定顺序（Overview → Colors → Typography → Layout → Elevation & Depth → Shapes → Components → Do's and Don'ts）写设计理由。数值唯一来源是 front matter；`tokens.css` 按确定性映射派生（`colors.primary`→`--color-primary`、`typography.h1.fontSize`→`--type-h1-size`、`components.button-primary.backgroundColor`→`--component-button-primary-background`…）。
+Aligned with [google-labs-code/design.md](https://github.com/google-labs-code/design.md): the YAML front matter carries **normalized design tokens** (`colors` / `typography` / `rounded` / `spacing` / `components`, where component values may reference `{colors.primary}`), and the Markdown body explains the design rationale in a fixed section order (Overview → Colors → Typography → Layout → Elevation & Depth → Shapes → Components → Do's and Don'ts). The front matter is the single source of truth for all values; `tokens.css` is derived by deterministic mapping (`colors.primary` → `--color-primary`, `typography.h1.fontSize` → `--type-h1-size`, `components.button-primary.backgroundColor` → `--component-button-primary-background`, …).
 
-`design_review` 开门前做**机械 lint**（内置实现，`extensions/designmd.ts`，无需网络）：
+Before the `design_review` gate opens, a **mechanical lint** runs (built in, `extensions/designmd.ts`, no network required):
 
-- **error（阻断开门）**：front matter 缺失/不可解析、token 引用未解析、重复章节
-- **warning（透出给审核者）**：缺 primary 色/typography、孤儿色、组件前景/背景对比度低于 WCAG AA(4.5:1)、章节乱序、tokens.css 与 front matter 失同步
+- **errors (block the gate)**: missing/unparseable front matter, unresolved token references, duplicate sections
+- **warnings (surfaced to the reviewer)**: missing primary color or typography, orphan colors, component contrast below WCAG AA (4.5:1), out-of-order sections, `tokens.css` out of sync with the front matter
 
-`viewport` 是主视口；可选 `viewports` 数组（≤3 个）声明额外自查视口——SELF-REVIEW 时每屏会在这些视口各截一张确认响应式布局未破。截图按 `<screen>@<w>x<h>-<时间戳>.jpg` 命名，各视口独立保留最近 3 张。
+`viewport` is the primary viewport; the optional `viewports` array (≤ 3) declares extra self-check viewports — during SELF-REVIEW each screen gets one screenshot per viewport to confirm responsive layout. Screenshots are named `<screen>@<w>x<h>-<timestamp>.jpg`, keeping the latest 3 per viewport.
 
-## IMPLEMENT 翻译规则（按 target）
+## IMPLEMENT translation rules (per target)
 
-规则全文在 `extensions/prompt.ts` 的 `IMPLEMENT_TARGET_RULES`，注入到工作流提示词、审核通过回流消息和 implement 阶段的每轮注入（compaction 后依然有效）。所有模型侧提示词均为英文（工具描述、结果文本、报错亦同）；人类界面（审核页、TUI 通知）保持中文。要点：
+The full rules live in `IMPLEMENT_TARGET_RULES` in `extensions/prompt.ts`. They are injected into the workflow prompt, the review-approved feedback message, and every turn during the IMPLEMENT stage (so they survive compaction). All model-facing prompts are English (tool descriptions, result texts, and errors included); human-facing surfaces (the review page, TUI notifications) remain in Chinese. Highlights:
 
-- **react**：先侦察目标工程（框架/样式方案/命名惯例），设计 token（front matter 为源，tokens.css 为投影）翻译为工程主题层（Tailwind theme / `:root` 变量 / theme 对象），一屏一页面组件，本地 `useState`，不引新依赖，跑工程自带 build/lint 收尾。
-- **swiftui**：tokens → `DesignTokens.swift`（`Color(hex:)` 或 `Color(red:green:blue:)`，注释原值），纵向/横向/层叠 → V/H/ZStack，一屏一 `struct <Screen>View` + `#Preview`，原生组件与 SF Symbol，有工具链则 `swift build` 验证。
-- **web**：侦察模板与 CSS 组织，tokens 合并进工程全局自定义属性，语义化标签，不引入框架/构建。
+- **react**: scout the target project first (framework / styling approach / naming conventions), translate design tokens (front matter as source, `tokens.css` as projection) into the project's theme layer (Tailwind theme / `:root` variables / theme object), one page component per screen, local `useState` only, no new dependencies, and finish by running the project's own build/lint.
+- **swiftui**: tokens → `DesignTokens.swift` (`Color(hex:)` or `Color(red:green:blue:)` with original values in comments); vertical/horizontal/overlay stacks → V/H/ZStack; one `struct <Screen>View` + `#Preview` per screen; native components and SF Symbols; run `swift build` to verify when a toolchain is available.
+- **web**: scout the template and CSS organization, merge tokens into the project's global custom properties, semantic markup, no frameworks or build step.
 
-三目标均已真模型实测（Vite React TS 工程、Swift Package 工程、静态站点工程）：react 产物 64 处 `var(--)` 零魔法值且 `vite build` 通过；swiftui 产物 `swift build` 零警告；web 产物 tokens 复制进工程、页面样式全 `var(--)`、`:root` 之外零魔法值。
+All three targets have been verified end-to-end with real models (a Vite React TS project, a Swift Package project, a static site project): the react output had 64 `var(--)` usages with zero magic values and a passing `vite build`; the swiftui output passed `swift build` with zero warnings; the web output had tokens copied into the project, all page styles on `var(--)`, and zero magic values outside `:root`.
 
-## 审核页
+## The review page
 
-每轮审核在本地固定端口的页面上进行（自动用系统默认浏览器打开）。**审核地址整个工作流保持不变**：默认端口 3374（"DESI"），被占用时 +1 游走（最多 25 个），全满才退回随机；token 按工作流稳定、工作流结束轮换——驳回-修改-再审循环里浏览器标签页可以一直开着：
+Each review round happens on a local page at a fixed port (opened automatically in your default browser). **The review URL stays the same for the entire workflow**: default port 3374 ("DESI"), incrementing up to 25 times when occupied, falling back to random only when all are taken. The token is stable per workflow and rotates when the workflow ends — your browser tab keeps working across reject–revise–resubmit loops:
 
-- **会话退出后依然可达**：服务器跑在游离子进程里，一次性/print/RPC 模式跑完即退也不影响；点「通过/驳回」后结果落盘，运行中的会话秒级拾取，下次会话启动时自动拾取回流（30 分钟无人操作自动关闭）；
-- 视口预设（375 / 390 / 768 / 1280，键 1-4）与 25%-100% 缩放，宽屏原型也能整屏审阅；
-- 每屏可「↗ 新标签」全屏打开，或点「截图」与模型最后一张自检截图对照；
-- 键盘快捷键：`A` 通过 · `R` 驳回 · `/` 聚焦意见框；
-- 决策端点单次有效，提交后页面提示可关闭。
+- **Reachable after the session exits**: the server runs in a detached subprocess; one-shot/print/RPC modes exiting right away don't affect it. Clicking approve/reject persists the result; a running session picks it up within seconds, and a session started later picks it up automatically (the server auto-closes after 30 minutes of inactivity).
+- Viewport presets (375 / 390 / 768 / 1280, keys 1–4) and 25%–100% zoom, so wide prototypes can be reviewed full-screen.
+- Each screen can be opened full-screen in a new tab (↗) or compared against the model's latest self-review screenshot (📸).
+- Keyboard shortcuts: `A` approve · `R` reject · `/` focus the feedback box.
+- The decision endpoint is single-use; the page shows a "you can close this" hint after submitting.
 
-## 架构与关键决策
+## Architecture & key decisions
 
-| 决策 | 实现 |
+| Decision | Implementation |
 |---|---|
-| 人工门是硬边界 | `design_review` 工具结果返回 `terminate: true`，agent 在该批次后跳过自动跟进——不依赖模型自觉停 |
-| 审核门独立于会话存活 | 审核服务器跑在游离子进程里（Node ≥23 原生跑 .ts；旧环境自动回退进程内）：一次性/print/RPC 模式跑完即退也不影响审核页可达；审核结果落盘 `.design/review-round-<n>.json`，运行中的会话 1.5s 轮询拾取，下次会话启动自动拾取回流 |
-| 审核回流 | 审核页按钮 → 本地服务器 → `pi.sendUserMessage()`（等同用户发言，总是触发 turn） |
-| 跨 turn 状态连续性 | design 工具仅在工作流激活时可见（`pi.setActiveTools()`），其 `promptGuidelines` 携带状态机规则；`before_agent_start` 每轮把当前阶段注入 `systemPromptOptions.promptGuidelines`——compaction 后依然成立 |
-| 断点续做 | 状态落盘 `.design/state.json`；`session_start` 时按状态恢复工具可见性并拾取离线期间到达的审核结果 |
-| 图片回流 | `design_render` 以 `AgentToolResult.content` 的 `ImageContent`（type-level 官方支持）直接附截图 |
-| 无 TUI 兼容（RPC/wuhu） | 全部交互走聊天 + 浏览器（默认浏览器自动打开）；`open` 失败不是错误（URL 总在工具结果里） |
+| Human gate as a hard boundary | The `design_review` tool result returns `terminate: true`; the agent skips automatic follow-up after that batch — no reliance on the model stopping on its own |
+| Review gate survives the session | The review server runs in a detached subprocess (Node ≥ 23 runs `.ts` natively; older environments fall back to in-process). One-shot/print/RPC modes exiting immediately don't affect reachability. Verdicts persist to `.design/review-round-<n>.json`; a running session polls every 1.5s, and a session started later picks them up automatically |
+| Review feedback loop | Review page button → local server → `pi.sendUserMessage()` (equivalent to the user speaking; always triggers a turn) |
+| Cross-turn state continuity | The design tools are only visible while the workflow is active (`pi.setActiveTools()`), and their `promptGuidelines` carry the state machine rules; `before_agent_start` injects the current stage into `systemPromptOptions.promptGuidelines` every turn — survives compaction |
+| Resume | State persists to `.design/state.json`; on `session_start`, tool visibility is restored and offline verdicts are picked up |
+| Screenshot feedback | `design_render` attaches screenshots directly as `ImageContent` in the `AgentToolResult.content` (officially supported at the type level) |
+| No-TUI compatibility (RPC/wuhu) | All interaction goes through chat + browser (the default browser opens automatically); a failed `open` is not an error (the URL is always in the tool result) |
 
-## 审核服务器安全模型
+## Review server security model
 
-本服务器是能把用户消息注入全权限 agent 会话的本地端点，按敌意面处理：
+This server is a local endpoint capable of injecting user messages into a full-permission agent session, and is treated as a hostile surface:
 
-- 仅绑定 `127.0.0.1`；默认固定端口 3374（`PI_DESIGN_PORT` 可覆盖），占用时 +1 游走，全满才随机；
-- 192-bit 随机 token 放进 URL 路径且**按工作流稳定**（审核地址跨轮不变，工作流结束即轮换），未知 token 一律无差别 404；
-- `POST /decision` 校验 `Host`（必须是 `127.0.0.1/localhost:<port>`，防 DNS rebinding）、`Sec-Fetch-Site`（拒绝 cross-site）与 `Origin`；
-- 决策端点单次有效，决策后服务器即关；30 分钟空闲自动关闭；
-- 静态服务路径限定在 `.design/` 内；
-- `session_shutdown` 幂等清理。
+- Binds to `127.0.0.1` only; fixed default port 3374 (overridable via `PI_DESIGN_PORT`), incrementing when occupied, random only when all are taken;
+- A 192-bit random token in the URL path, **stable per workflow** (the review URL never changes across rounds; rotates when the workflow ends); unknown tokens get an indiscriminate 404;
+- `POST /decision` validates `Host` (must be `127.0.0.1`/`localhost:<port>`, guarding against DNS rebinding), `Sec-Fetch-Site` (cross-site rejected), and `Origin`;
+- The decision endpoint is single-use; the server shuts down right after a decision, and auto-closes after 30 minutes idle;
+- Static file serving is confined to `.design/`;
+- `session_shutdown` performs idempotent cleanup.
 
-## 开发
+## Development
 
 ```bash
-npm run typecheck        # tsc --noEmit（strict + exactOptionalPropertyTypes）
-npm run smoke            # 四套冒烟：服务器安全矩阵 / 截图双引擎 / 扩展全链路 / 审核页浏览器交互
+npm run typecheck        # tsc --noEmit (strict + exactOptionalPropertyTypes)
+npm run smoke            # four smoke suites: server security matrix / dual screenshot engines / full extension pipeline / review page browser interaction
 ```
 
-注意：本仓库在部分外置盘上会遇到 npm 静默漏装个别包（typescript/jiti/typebox/pi-coding-agent 解压失败但 npm 报成功）。若 `typecheck`/`smoke` 报模块缺失，用 `npm pack <pkg>@<version>` 下载后手工解压到 `node_modules/` 对应目录。
+Note: on some external drives, npm silently fails to extract a few packages (typescript / jiti / typebox / pi-coding-agent may fail to unpack while npm still reports success). If `typecheck`/`smoke` report missing modules, download with `npm pack <pkg>@<version>` and extract manually into the matching `node_modules/` directory.
 
-## 发布验证（已验证的流程）
+## Publishing (verified flow)
 
-`files` 字段限定发布内容为 `extensions/` + `README.md` + `LICENSE`（tarball 8 文件 / ~22KB）。本地安装链路已实测：
+The `files` field limits published content to `extensions/` + `README.md` + `LICENSE` (8-file tarball / ~22 KB). The local install chain has been verified:
 
 ```bash
-npm pack                                            # 产出 tgz
+npm pack                                            # produces the tgz
 mkdir /tmp/pkg && tar xzf pi-design-0.1.0.tgz -C /tmp/pkg
-cd /tmp/pkg/package && npm install --omit=dev       # 自包含（peerDeps 会一并装上）
-cd <目标工程> && pi install /tmp/pkg/package -l     # 项目本地安装
-# 项目首次使用需信任（写入 ~/.pi/agent/trust.json），否则项目级 .pi/settings.json 不加载
+cd /tmp/pkg/package && npm install --omit=dev       # self-contained (peerDeps get installed too)
+cd <target-project> && pi install /tmp/pkg/package -l   # project-local install
+# First use in a project requires trust (~/.pi/agent/trust.json), otherwise project-level .pi/settings.json won't load
 ```
 
-发布到 npm 后用户侧即 `pi install npm:pi-design`。
+Once published to npm, users install with `pi install npm:pi-design`.
 
-## 里程碑状态
+## Milestones
 
-- [x] M0 事实核验（工具结果图片类型层确认；sendUserMessage 触发 turn；headless 截图双路径；terminate 硬停）
-- [x] M1 骨架：命令/工具/状态机/截图回流/自迭代提示词
-- [x] M2 审核服务器 + 双通道（按钮 + 聊天文字）
-- [x] M3 IMPLEMENT 翻译 prompt 按 target 实测调优（react/swiftui/web 真模型 e2e 通过）
-- [x] M4 打磨：多视口（config.viewports + 视口标签截图）、审核页交互增强（预设/缩放/快捷键/截图对照）、package 发布验证
-- [x] M5 对齐 Google [DESIGN.md 格式规范](https://github.com/google-labs-code/design.md)：front matter 规范化 token + 确定性 tokens.css 投影 + 审核门前机械 lint（真模型 e2e 通过：0 error / 2 warning）
-- [x] M6 审核门游离化：服务器跑在 detached 子进程，会话退出后审核页仍可达，决策落盘跨会话拾取（真机验证：进程退出后 URL 200 → curl 过审 → 重启会话自动回流完成实现）
-- 修复：审核页决策 fetch 曾用相对 URL 导致双重 token 404（按钮路径自 M2 起即失效），已改为根相对路径并加浏览器级回归测试
+- [x] **M0** Fact-checking (tool-result image type confirmed; `sendUserMessage` triggers a turn; dual headless screenshot paths; `terminate` hard stop)
+- [x] **M1** Skeleton: command / tools / state machine / screenshot feedback / self-iteration prompts
+- [x] **M2** Review server + dual channel (button + chat text)
+- [x] **M3** IMPLEMENT translation prompts tuned per target with real-model e2e (react / swiftui / web all passing)
+- [x] **M4** Polish: multi-viewport (`config.viewports` + viewport-labeled screenshots), review page interactions (presets / zoom / shortcuts / screenshot compare), package publishing verified
+- [x] **M5** Alignment with the Google [DESIGN.md spec](https://github.com/google-labs-code/design.md): normalized front-matter tokens + deterministic `tokens.css` projection + mechanical lint before the review gate (real-model e2e: 0 errors / 2 warnings)
+- [x] **M6** Detached review gate: the server runs in a detached subprocess, stays reachable after session exit, and verdicts persist across sessions (verified on real hardware: URL still 200 after process exit → curl approval → session restart auto-feedback completed the implementation)
+- [x] **Fix**: the review page decision fetch once used a relative URL causing a doubled token 404 (the button path had been broken since M2); switched to root-relative paths with a browser-level regression test
 
 ## License
 
-MIT
+[MIT](./LICENSE)
