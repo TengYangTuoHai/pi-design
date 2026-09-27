@@ -1,0 +1,46 @@
+{
+  "name": "pi-design",
+  "version": "0.1.0",
+  "description": "Pi extension: /design — high-fidelity HTML prototyping, self-review, human gate, then target-stack UI implementation.",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "main": "./extensions/index.ts",
+  "dependencies": {
+    "playwright-core": "^1.56.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.87.1",
+    "@types/node": "^24.0.0",
+    "jiti": "^2.6.1",
+    "typebox": "latest",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "smoke:server": "node scripts/smoke-server.mjs",
+    "smoke:shot": "node scripts/smoke-shot.mjs",
+    "smoke:extension": "node scripts/smoke-extension.mjs",
+    "smoke:review": "node scripts/smoke-review-page.mjs",
+    "smoke:designmd": "node scripts/smoke-designmd.mjs",
+    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd"
+  }
+}
