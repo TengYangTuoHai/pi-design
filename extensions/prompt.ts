@@ -102,6 +102,17 @@ Prose sections follow this exact order (omit unneeded, never reorder): Overview,
 ### tokens.css projection (deterministic)
 colors.primary → \`--color-primary\`; typography.h1.fontSize → \`--type-h1-size\` (family/size/weight/line-height/tracking); rounded.md → \`--rounded-md\`; spacing.sm → \`--spacing-sm\`; components.button-primary.backgroundColor → \`--component-button-primary-background\` (background/text/rounded/padding/size/height/width).
 
+## Scope
+${
+	state.scope === "component"
+		? `COMPONENT scope — the deliverable is ONLY the component named in the brief, plus the variants/states it genuinely needs. Below, one "screen" file means one component showcase page.
+- PLAN: list the component's variants/states/sizes (default/hover/disabled/ loading; sm/md/lg…) — do NOT plan app screens, navigation, or any page the brief did not ask for.
+- BUILD: one showcase page per component under .design/prototype/screens/: the component rendered in its representative states on a neutral backdrop; no app chrome, no invented surrounding pages.
+- IMPLEMENT: implement ONLY the component as one reusable unit in the target project (one component file + tokens; a demo/storybook entry only if the user asked); do not create pages, routes, layouts, or app scaffolding beyond the component itself.`
+		: `APP/PAGE scope — the brief defines an app or page flow, and PLAN may enumerate its screens.
+Scope guard: if the brief actually names a single component or control (a button, card, input, modal, tab bar, avatar, chart…), do NOT expand it into the whole app. Persist the switch first (design_status {"scope":"component"}), then follow COMPONENT-scope rules from PLAN on: showcase page only, implement only the component. Never widen scope unless the user explicitly asks for more.`
+}
+
 ## State machine (execute strictly)
 BRIEF → PLAN → BUILD → SELF-REVIEW (≤3 rounds/screen) → REVIEW (human gate) ─┬→ approved → IMPLEMENT → done
                                                                             └→ rejected/comments → BUILD
@@ -133,12 +144,17 @@ export function stageGuideline(state: DesignState, config: DesignConfig): string
 	const screens = state.screens.length > 0 ? state.screens.join(", ") : "none";
 	const base = [
 		"[/design workflow active]",
-		`stage=${state.stage}; screens=[${screens}]; reviewRound=${state.reviewRound}; target=${config.target}.`,
+		`stage=${state.stage}; scope=${state.scope}; screens=[${screens}]; reviewRound=${state.reviewRound}; target=${config.target}.`,
 		"BUILD: render each screen as you produce it (design_render, ≤3 rounds/screen); when all screens pass, call design_review (the turn ends right after the call).",
 		".design/DESIGN.md is authoritative (DESIGN.md spec: front matter = normative tokens, prose = rationale); tokens.css is its CSS projection — keep both in sync.",
 		"A user message after REVIEW is the review verdict: approval → design_status {\"stage\":\"implement\"}; comments → design_status {\"stage\":\"build\"}.",
 		"IMPLEMENT: .design/prototype + tokens.css are the spec; on conflict fix the implementation, not the prototype; finish with design_status {\"stage\":\"done\"}.",
 	];
+	if (state.scope === "component") {
+		base.push(
+			"COMPONENT SCOPE: the deliverable is only the requested component (+ its variants) — one showcase page in the prototype, one reusable component at IMPLEMENT; no app screens, pages, routing, or scaffolding.",
+		);
+	}
 	if (state.stage === "implement") {
 		base.push(`IMPLEMENT translation rules (${config.target}):\n${IMPLEMENT_TARGET_RULES[config.target]}`);
 	}

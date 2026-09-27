@@ -586,7 +586,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 			name: "design_status",
 			label: "Design status",
 		description:
-			"Read/update .design/state.json (stage, screen list, brief, active flag). Call it to persist every stage transition. Passing active:false or stage:'done' deactivates the design tools and closes the review server.",
+			"Read/update .design/state.json (stage, scope, screen list, brief, active flag). Call it to persist every stage transition. Passing active:false or stage:'done' deactivates the design tools and closes the review server.",
 		promptGuidelines: STATUS_TOOL_GUIDELINES,
 		parameters: Type.Object({
 			stage: Type.Optional(
@@ -596,6 +596,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 					).map((s) => Type.Literal(s)),
 				),
 			),
+			scope: Type.Optional(Type.Union([Type.Literal("app"), Type.Literal("component")])),
 			screens: Type.Optional(Type.Array(Type.String())),
 			brief: Type.Optional(Type.String()),
 			active: Type.Optional(Type.Boolean()),
@@ -604,6 +605,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 			const config = loadConfig(ctx.cwd);
 			const state = loadState(ctx.cwd);
 			if (params.stage !== undefined) state.stage = params.stage as DesignStage;
+			if (params.scope !== undefined) state.scope = params.scope;
 			if (params.screens !== undefined) state.screens = params.screens;
 			if (params.brief !== undefined) state.brief = params.brief;
 			if (params.active !== undefined) state.active = params.active;
@@ -619,6 +621,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 			const lines = [
 				`active: ${state.active}`,
 				`stage: ${state.stage}`,
+				`scope: ${state.scope}`,
 				`reviewRound: ${state.reviewRound}`,
 				`screens: ${state.screens.length > 0 ? state.screens.join(", ") : "(none)"}`,
 				`config: target=${config.target}, viewport=${config.viewport.width}x${config.viewport.height}`,

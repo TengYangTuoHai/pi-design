@@ -9,9 +9,13 @@
   "type": "module",
   "files": [
     "extensions",
+    "dsh",
     "README.md",
     "LICENSE"
   ],
+  "bin": {
+    "pi-design": "./dsh/cli.mjs"
+  },
   "pi": {
     "extensions": [
       "./extensions/index.ts"
@@ -41,6 +45,7 @@
     "smoke:extension": "node scripts/smoke-extension.mjs",
     "smoke:review": "node scripts/smoke-review-page.mjs",
     "smoke:designmd": "node scripts/smoke-designmd.mjs",
-    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd"
+    "smoke:dsh": "node scripts/smoke-dsh.mjs",
+    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd && npm run smoke:dsh"
   }
 }

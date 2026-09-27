@@ -43,6 +43,23 @@ Dependencies:
 
 While the workflow is active, the review page opens in your browser (approve / reject + feedback). You can also reply "approved" or your feedback directly in the chat — both are equivalent. The verdict flows back into the session as a user message and keeps driving the state machine.
 
+## DSH adapter (Path A: skill + CLI)
+
+The same workflow runs inside [DSH](https://github.com/deepseek-ai) (or any agent with a shell and a `read_image`-style image tool) without the Pi extension runtime. The Pi-coupled surface (`extensions/index.ts`) is replaced by a standalone CLI that reuses every Pi-free module (`server.ts`, `shot.ts`, `designmd.ts`, `prompt.ts`) directly — no build step, requires Node ≥ 23.6:
+
+```bash
+node dsh/cli.mjs start "<brief>" [--scope app|component]
+                                         # reset + print the full workflow state machine
+node dsh/cli.mjs render screens/x.html   # headless screenshot → view with read_image
+node dsh/cli.mjs review                  # DESIGN.md lint + regenerate & open the playground → STOP
+node dsh/cli.mjs playground              # (re)generate + open the playground (read-only)
+node dsh/cli.mjs status --stage build    # persist transitions (+ stage rules re-injection)
+node dsh/cli.mjs stop                    # end the workflow
+node dsh/cli.mjs install-skill [dir]     # write a DSH SKILL.md pointing at this CLI
+```
+
+`install-skill` (default target `~/.dsh/skills`) bakes the absolute CLI path into the skill named `design`, so `/design <brief>` works in the DSH composer like on Pi (DSH skills are `/`-invocable; the project `.dsh/skills/` root beats the user root). What maps where: `design_render` → `render` + the agent's image tool; the human gate → `review` **(re)generates `.design/playground.html`** — a self-contained static page (pure `file://`, no server/token/port) showing every current screen in one view with viewport presets (375/390/768/1280), zoom, per-screen full-screen, and self-review-shot compare — and the **verdict is given in chat**: explicit approval → `status --stage implement`, comments → `status --stage build`. `playground` reopens the view anytime without touching workflow state. (In Pi the review server + browser buttons + `sendUserMessage` loop automates the verdict; DSH path A deliberately drops that machinery — the browser only shows the design.) `design_review`'s `terminate: true` becomes an explicit end-your-turn instruction (prompt discipline, not a hard boundary); per-turn `promptGuidelines` → re-printed stage rules on every `status` call (compaction-safe). Scope: `--scope component` restricts the whole workflow to a single component (+ its variants) — one showcase page, one reusable component at IMPLEMENT, no app scaffolding; a scope guard in the workflow prompt self-corrects a misclassified brief. Set `PI_DESIGN_NO_BROWSER=1` to suppress browser opening (CI/tests). Known limitations: with a model that cannot view images, self-review falls back to the token-by-token code audit documented in the workflow prompt; and under DSH's default file sandbox the raw-chrome screenshot fallback may fail to create its temp profile (the playwright engine — the default — works fine, so this only matters when playwright-core is unavailable).
+
 ## Project conventions (`.design/`)
 
 ```text

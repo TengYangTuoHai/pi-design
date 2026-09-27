@@ -6,6 +6,9 @@ import * as path from "node:path";
 
 export type DesignTarget = "swiftui" | "react" | "web";
 
+/** Unit of work: a whole app/page flow, or a single component (+ its variants). */
+export type DesignScope = "app" | "component";
+
 export type DesignStage =
 	| "brief"
 	| "plan"
@@ -32,6 +35,8 @@ export interface DesignConfig {
 export interface DesignState {
 	active: boolean;
 	stage: DesignStage;
+	/** Workflow scope: whole app/page ("app") or a single component ("component"). */
+	scope: DesignScope;
 	brief?: string | undefined;
 	/** Screen files relative to .design/prototype/, e.g. "screens/login.html". */
 	screens: string[];
@@ -139,6 +144,7 @@ export function loadState(cwd: string): DesignState {
 	return {
 		active: obj.active === true,
 		stage,
+		scope: obj.scope === "component" ? "component" : "app",
 		brief: typeof obj.brief === "string" ? obj.brief : undefined,
 		screens,
 		reviewRound: typeof obj.reviewRound === "number" ? obj.reviewRound : 0,
