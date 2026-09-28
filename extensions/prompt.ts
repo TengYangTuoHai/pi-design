@@ -24,6 +24,7 @@ export const IMPLEMENT_TARGET_RULES: Record<DesignTarget, string> = {
 		"R4 Local useState is enough for interaction; hardcode static copy; do not add state management, routing, or any new dependency (if truly necessary, state the assumption in writing first).",
 		"R5 Icons: prefer the project's existing approach, otherwise inline SVG; put images and other static assets in the project's static directory.",
 		"R6 After implementing, run the project's own checks (npm run build / lint / typecheck, if present) and fix until they pass; if you cannot run them, say so in your reply and manually re-check imports and JSX balance.",
+		"R7 Motion: project the motion tokens like any other token (CSS custom properties or the theme's transition config); reproduce the prototype's animations with the project's native mechanism (CSS transitions/animations, or the animation lib already in the project — never add one for this); keep durations/easings on tokens; honor prefers-reduced-motion where the app has a reduced-motion story; do not port the prototype's motion.js runtime — it is a review tool, not product code.",
 	].join("\n"),
 	swiftui: [
 		"S1 Translate the design tokens (DESIGN.md front matter is normative; tokens.css is its CSS projection) into DesignTokens.swift (or the project's existing constants file): colors → static let, either a Color(hex:) extension or Color(red:green:blue:), with the original value in a comment; font sizes/spacing/radii → CGFloat constants; keep token names; bare visual values inside body are forbidden.",
@@ -32,12 +33,14 @@ export const IMPLEMENT_TARGET_RULES: Record<DesignTarget, string> = {
 		"S4 Use native components: TextField/SecureField/Button/Toggle/Link; pick the closest SF Symbol for icons; choose List or ScrollView by content nature — do not pile long lists into ScrollView+VStack.",
 		"S5 No WebView and no literal HTML/CSS translation; omit prototype interactions with no native equivalent (e.g. hover) and note it; if DESIGN.md declares dark-mode support, use semantic colors (.primary/.secondary/.background) or Asset Catalog colors.",
 		"S6 If a Swift toolchain is available locally, validate syntax with swiftc -parse; otherwise read the code through once, checking types, brackets, and Image/closure balance.",
+		"S7 Motion: translate motion tokens into constants (durations as TimeInterval/CGFloat, easings as the closest SwiftUI curve — .smooth/.snappy/.bouncy or a custom UnitCurve) and drive them with .animation(_:value:)/withAnimation; springs may map to .spring(duration:bounce:); respect accessibilityReduceMotion (@Environment(\\.accessibilityReduceMotion)) by falling back to the reduced variant documented in DESIGN.md; never port motion.js.",
 	].join("\n"),
 	web: [
 		"W1 Recon the target project first: templating approach (plain HTML / template engine / framework), CSS organization (single file / BEM / layered @import), JS conventions; project conventions override the rules below.",
 		"W2 Project the design tokens (DESIGN.md front matter) into the project's global custom-property layer via the deterministic naming (keep names, dedupe); page styles reference variables only; magic values are forbidden.",
 		"W3 Put pages into the project's existing directory structure; keep semantics and accessibility (label, alt, real button/a elements) at least at prototype level.",
 		"W4 Write only the interaction the prototype needs; do not introduce frameworks or build steps the project doesn't already have; load fonts and other external resources the way the project already does.",
+		"W5 Motion: reference the projected --motion-* variables for every duration/easing and reproduce the prototype's CSS animations/transitions as-is; keep the prefers-reduced-motion media query; do not port motion.js (review tooling only).",
 	].join("\n"),
 };
 
@@ -48,6 +51,7 @@ export const IMPLEMENT_TARGET_RULES: Record<DesignTarget, string> = {
  */
 export const RENDER_TOOL_GUIDELINES = [
 	"After design_render returns, actually look at the screenshot: check alignment, visual hierarchy, whitespace, cross-screen consistency, brand consistency with .design/DESIGN.md, and AI-tells (dull gradients, emoji overuse, cookie-cutter cards). Fix what you find, then re-render.",
+	"Screenshots show the settled state; to verify motion, render again with atMs (e.g. 150) for a mid-animation frame and compare against the ## Motion inventory in DESIGN.md.",
 	"SELF-REVIEW is capped at 3 rounds per screen; when the cap is reached, take the known issues to human review instead of burning tokens in a loop.",
 ];
 
@@ -58,7 +62,8 @@ export const REVIEW_TOOL_GUIDELINES = [
 
 export const STATUS_TOOL_GUIDELINES = [
 	"[/design workflow] Every stage transition must be persisted via design_status to .design/state.json: BRIEF→PLAN→BUILD→SELF-REVIEW→REVIEW→IMPLEMENT→done.",
-	"BUILD: finish .design/tokens.css before pages; one screen per file at .design/prototype/screens/<id>.html; every color/size/spacing/radius must reference tokens.css via var(--…) — inline magic values are forbidden.",
+	"BUILD: finish .design/tokens.css before pages; one screen per file at .design/prototype/screens/<id>.html; every color/size/spacing/radius/duration/easing must reference tokens.css via var(--…) — inline magic values are forbidden.",
+	"MOTION: design it with the UI — declarative CSS transitions/animations only (no rAF loops), values via var(--motion-*), every screen includes <script src=\"../motion.js\"></script> before </body> (auto-generated; never hand-write), a prefers-reduced-motion fallback, and the per-screen inventory in DESIGN.md's ## Motion section.",
 	"A user message arriving after REVIEW is the review verdict: explicit approval → design_status {\"stage\":\"implement\"} then implement to spec; comments/rejection → design_status {\"stage\":\"build\"} and revise per the feedback.",
 	"IMPLEMENT iron rules: .design/prototype + tokens.css are the spec; when the implementation conflicts with the prototype, fix the implementation, never the prototype; after each screen, self-check against that screen's latest screenshot in .design/shots/ (if you cannot view images, do a token-by-token code audit instead and say so); when everything is done, finish with design_status {\"stage\":\"done\"}.",
 ];
@@ -93,14 +98,31 @@ colors: { primary, secondary, tertiary, neutral, ... }        # CSS colors
 typography: { h1: {fontFamily, fontSize, fontWeight?, lineHeight?, letterSpacing?}, body-md: {...}, ... }
 rounded: { sm: 4px, md: 8px }                                 # dimensions
 spacing: { sm: 8px, md: 16px }                                # dimensions or bare numbers
+motion:
+  duration:                                                    # timings
+    fast: 150ms
+    normal: 300ms
+    slow: 550ms
+  easing:                                                      # curves
+    standard: cubic-bezier(0.2, 0, 0, 1)
+    spring: cubic-bezier(0.34, 1.56, 0.64, 1)
 components:
   button-primary: { backgroundColor, textColor, typography, rounded, padding, size, height, width }   # values may be token refs like "{colors.tertiary}"
 ---
 \`\`\`
-Prose sections follow this exact order (omit unneeded, never reorder): Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do's and Don'ts. The review gate lints this file mechanically: token refs must resolve; a primary color and typography must exist; component text/background pairs must pass WCAG AA (4.5:1); no duplicate sections; tokens.css must stay in sync.
+Prose sections follow this exact order (omit unneeded, never reorder): Overview, Colors, Typography, Layout, Elevation & Depth, Motion, Shapes, Components, Do's and Don'ts. The review gate lints this file mechanically: token refs must resolve; a primary color and typography must exist; component text/background pairs must pass WCAG AA (4.5:1); no duplicate sections; tokens.css must stay in sync; motion tokens need a \`## Motion\` section that mentions reduced motion.
 
 ### tokens.css projection (deterministic)
-colors.primary → \`--color-primary\`; typography.h1.fontSize → \`--type-h1-size\` (family/size/weight/line-height/tracking); rounded.md → \`--rounded-md\`; spacing.sm → \`--spacing-sm\`; components.button-primary.backgroundColor → \`--component-button-primary-background\` (background/text/rounded/padding/size/height/width).
+colors.primary → \`--color-primary\`; typography.h1.fontSize → \`--type-h1-size\` (family/size/weight/line-height/tracking); rounded.md → \`--rounded-md\`; spacing.sm → \`--spacing-sm\`; motion.duration.fast → \`--motion-duration-fast\`, motion.easing.spring → \`--motion-easing-spring\`; components.button-primary.backgroundColor → \`--component-button-primary-background\` (background/text/rounded/padding/size/height/width).
+
+### Motion (designed WITH the UI, not bolted on)
+Motion is a first-class deliverable: entrances, state changes, and micro-interactions are designed in the same pass as layout/color.
+- Tokens first: define the \`motion:\` scale (durations + easings) in DESIGN.md front matter together with colors/typography, project it into tokens.css, and use ONLY \`var(--motion-*)\` values in pages — magic durations/easings are forbidden, exactly like magic colors.
+- Declarative only: build motion with CSS transitions / CSS animations (or the Web Animations API when needed) — NEVER rAF/setInterval tick loops. The review tooling can only control declarative animations.
+- Playback runtime: every screen includes \`<script src="../motion.js"></script>\` just before \`</body>\` (pages at the prototype root use \`src="motion.js"\`). The file is auto-generated and refreshed by the tooling — never write or edit it yourself.
+- Inventory: keep \`## Motion\` in DESIGN.md listing per screen what moves: trigger → element/properties → duration/easing (e.g. "screens/home.html — entrance: hero card fades in + slides up 12px, normal/standard").
+- Reduced motion: every page carries \`@media (prefers-reduced-motion: reduce)\` that skips or shortens its animations.
+- Restraint: animate transform/opacity by default (compositor-friendly), keep counts small, durations short; nothing should loop unless it is a progress/spinner affordance.
 
 ## Scope
 ${
@@ -120,8 +142,8 @@ BRIEF → PLAN → BUILD → SELF-REVIEW (≤3 rounds/screen) → REVIEW (human 
 1. **BRIEF**: read the files above; when the request is ambiguous, make reasonable assumptions yourself and record them in a \`<!-- assumption: ... -->\` comment at the top of each screen's HTML — do not interrupt the user with questions.
 2. **PLAN**: state the screen list in one go (id/name/purpose/key elements) and maintain .design/prototype/index.html as a navigation shell (iframes + desktop/phone frames). No business pages in this stage.
 3. **BUILD**: keep DESIGN.md's front matter and tokens.css in sync first (projection above), then write pages; one screen per file; visual values may only come from tokens.css.
-4. **SELF-REVIEW**: per screen, call design_render → critique the screenshot → fix → re-render, at most 3 rounds per screen; use design_status along the way to keep the screen list and stage current.${extraViewports ? " Extra check viewports are configured: after a screen passes at the primary viewport, render it once at each extra viewport (pass the viewport argument to design_render) and confirm the layout holds." : ""}
-5. **REVIEW**: when every screen has passed self-review, call design_review to open the human review page and **end the turn immediately**; wait for the human verdict — never start implementing on your own.
+4. **SELF-REVIEW**: per screen, call design_render → critique the screenshot → fix → re-render, at most 3 rounds per screen; use design_status along the way to keep the screen list and stage current.${extraViewports ? " Extra check viewports are configured: after a screen passes at the primary viewport, render it once at each extra viewport (pass the viewport argument to design_render) and confirm the layout holds." : ""} Screenshots show the SETTLED end state; to check a motion mid-flight, render at a time offset (design_render \`atMs\` / CLI \`--at <ms>\`, e.g. 150) and confirm the intermediate frame, then read the animation CSS against the \`## Motion\` inventory (timing, easing, reduced-motion).
+5. **REVIEW**: when every screen has passed self-review, call design_review to open the human review page and **end the turn immediately**; wait for the human verdict — never start implementing on your own. The review page can PLAY motion (↺ replay, pause, ½×/¼× slow-mo) — motion is part of what the human judges.
 6. **IMPLEMENT**: implement to spec from prototype + tokens.css for the configured target; on conflict, fix the implementation, never the prototype; after each screen, self-check against its latest screenshot (if the current model cannot view images, do a token-by-token code audit instead and say so); finish with design_status {"stage":"done"}.
 
 ## IMPLEMENT translation rules (target: ${config.target})
@@ -147,6 +169,7 @@ export function stageGuideline(state: DesignState, config: DesignConfig): string
 		`stage=${state.stage}; scope=${state.scope}; screens=[${screens}]; reviewRound=${state.reviewRound}; target=${config.target}.`,
 		"BUILD: render each screen as you produce it (design_render, ≤3 rounds/screen); when all screens pass, call design_review (the turn ends right after the call).",
 		".design/DESIGN.md is authoritative (DESIGN.md spec: front matter = normative tokens, prose = rationale); tokens.css is its CSS projection — keep both in sync.",
+		"Motion is part of the design: durations/easings via var(--motion-*) only, declarative CSS/WAAPI animations only, screens include ../motion.js (playback runtime), prefers-reduced-motion fallback, inventory in ## Motion; verify mid-animation with design_render atMs.",
 		"A user message after REVIEW is the review verdict: approval → design_status {\"stage\":\"implement\"}; comments → design_status {\"stage\":\"build\"}.",
 		"IMPLEMENT: .design/prototype + tokens.css are the spec; on conflict fix the implementation, not the prototype; finish with design_status {\"stage\":\"done\"}.",
 	];

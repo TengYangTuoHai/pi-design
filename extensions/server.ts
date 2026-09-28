@@ -103,10 +103,11 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 			const shotBtn = shot
 				? `<button class="tool" data-shot="${shot}" title="对照模型最后自检截图">截图</button>`
 				: "";
+			const replayBtn = `<button class="tool rpl" title="重播本屏动效">↺ 重播</button>`;
 			return `<figure class="screen" data-screen="${screen}">
 				<figcaption>
 					<span>${label} <span class="dim">${screen}</span></span>
-					<span class="tools">${shotBtn}<a class="tool" href="${src}" target="_blank" rel="noopener">↗ 新标签</a></span>
+					<span class="tools">${replayBtn}${shotBtn}<a class="tool" href="${src}" target="_blank" rel="noopener">↗ 新标签</a></span>
 				</figcaption>
 				<div class="sizer">
 					<div class="frame"><iframe src="${src}" loading="lazy"></iframe></div>
@@ -140,6 +141,11 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 	.preset { background:#262a32; color:#c7cbd1; border:1px solid #343946; border-radius:6px; padding:5px 10px; font:12px inherit; cursor:pointer; }
 	.preset:hover { background:#2e333d; }
 	.zoom { display:flex; gap:8px; align-items:center; font-size:12px; color:#9aa0a6; }
+	.mbar { display:flex; gap:6px; align-items:center; padding-left:14px; border-left:1px solid #2b2f37; flex-wrap:wrap; }
+	.mbtn { background:#262a32; color:#c7cbd1; border:1px solid #343946; border-radius:6px; padding:5px 10px; font:12px inherit; cursor:pointer; }
+	.mbtn:hover { background:#2e333d; }
+	.mbtn.active { color:#e8eaed; border-color:#6ea8fe; }
+	.mnote { font-size:11px; color:#f2cc60; }
 	main { display:flex; gap:28px; padding:24px 20px 140px; overflow-x:auto; align-items:flex-start; flex-wrap:wrap; }
 	.screen figcaption { margin:0 0 8px 2px; font-size:13px; font-weight:600; display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
 	.tools { display:flex; gap:6px; font-weight:400; }
@@ -169,6 +175,14 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 	<span class="spacer"></span>
 	<span class="presets">${presets}</span>
 	<label class="zoom">缩放 <input id="zoom" type="range" min="25" max="100" step="5" value="100"> <span id="zoomv">100%</span></label>
+	<span class="mbar">
+		<button class="mbtn" id="mreplay" type="button" title="重播所有屏的动效">▶ 重播</button>
+		<button class="mbtn" id="mpause" type="button" title="暂停 / 继续所有动画">⏸ 暂停</button>
+		<button class="mbtn mspd active" data-r="1" type="button">1×</button>
+		<button class="mbtn mspd" data-r="0.5" type="button">½×</button>
+		<button class="mbtn mspd" data-r="0.25" type="button">¼×</button>
+		<span class="mnote" id="mnote" style="display:none"></span>
+	</span>
 </header>
 <main>
 ${frames}
@@ -215,6 +229,68 @@ document.querySelectorAll("button.tool[data-shot]").forEach((b) => b.addEventLis
 		frame.appendChild(iframe);
 	}
 }));
+// ---- motion playback: postMessage to each screen's ../motion.js runtime ----
+// Screens carrying the runtime ACK (plus a "ready" ping on load) and get
+// smooth in-place control; screens without it fall back to an iframe reload
+// for replay (which also restarts animations) and are flagged for pause/slow-mo.
+const frameEls = () => [...document.querySelectorAll(".frame iframe")];
+function postMotion(iframe, action, extra) {
+	try {
+		iframe.contentWindow.postMessage({ type: "pi-design:motion", action, ...extra }, "*");
+	} catch {
+		/* frame not ready */
+	}
+}
+window.addEventListener("message", (e) => {
+	if (e.data?.type !== "pi-design:motion-ack") return;
+	for (const f of frameEls()) {
+		if (f.contentWindow === e.source) {
+			f.dataset.motion = "1";
+			break;
+		}
+	}
+});
+function replayFrame(f) {
+	if (f.dataset.motion === "1") postMotion(f, "replay");
+	else f.setAttribute("src", f.getAttribute("src")); // no runtime → reload restarts animations
+}
+function noteMissingRuntime() {
+	const missing = frameEls().filter((f) => f.dataset.motion !== "1").length;
+	const el = document.getElementById("mnote");
+	if (!el) return;
+	if (missing > 0) {
+		el.textContent = missing + " 屏未接入 ../motion.js（重播可用，暂停/慢放不可用）";
+		el.style.display = "inline";
+	} else {
+		el.style.display = "none";
+	}
+}
+let paused = false;
+document.getElementById("mreplay").addEventListener("click", () => frameEls().forEach(replayFrame));
+document.getElementById("mpause").addEventListener("click", function () {
+	paused = !paused;
+	this.textContent = paused ? "▶ 继续" : "⏸ 暂停";
+	for (const f of frameEls()) {
+		if (f.dataset.motion === "1") postMotion(f, paused ? "pause" : "play");
+	}
+	noteMissingRuntime();
+});
+document.querySelectorAll(".mbtn.mspd").forEach((b) =>
+	b.addEventListener("click", () => {
+		const rate = +b.dataset.r;
+		document.querySelectorAll(".mbtn.mspd").forEach((x) => x.classList.toggle("active", +x.dataset.r === rate));
+		for (const f of frameEls()) {
+			if (f.dataset.motion === "1") postMotion(f, "rate", { rate });
+		}
+		noteMissingRuntime();
+	}),
+);
+document.querySelectorAll("button.rpl").forEach((b) =>
+	b.addEventListener("click", () => {
+		const f = b.closest(".screen")?.querySelector(".frame iframe");
+		if (f) replayFrame(f);
+	}),
+);
 function decide(action) {
 	const comment = document.getElementById("comment").value.trim();
 	if (action === "reject" && !comment && !confirm("未填写驳回意见，确定直接驳回？")) return;

@@ -41,6 +41,7 @@ const EXTENSIONS_DIR = path.join(REPO_ROOT, "extensions");
 const { designPaths, loadConfig, loadState, saveState } = await import(
 	pathToFileURL(path.join(EXTENSIONS_DIR, "types.ts"))
 );
+const { writeMotionRuntime } = await import(pathToFileURL(path.join(EXTENSIONS_DIR, "motion.ts")));
 const { captureScreenshot } = await import(pathToFileURL(path.join(EXTENSIONS_DIR, "shot.ts")));
 const { lintDesignMd } = await import(pathToFileURL(path.join(EXTENSIONS_DIR, "designmd.ts")));
 const { buildWorkflowPrompt, stageGuideline } = await import(
@@ -190,7 +191,7 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 			return [
 				`<div class="card" data-src="${escapeHtml(src)}"${shot ? ` data-shot="${escapeHtml(shot)}"` : ""}>`,
 				`<h2><span class="name">${escapeHtml(name)}</span><span class="file">${escapeHtml(screen)}</span>`,
-				`<span class="actions"><a href="${escapeHtml(src)}" target="_blank" rel="noopener">↗ 全屏</a>${
+				`<span class="actions"><a href="${escapeHtml(src)}" target="_blank" rel="noopener">↗ 全屏</a><button class="rpl" type="button" title="重播本屏动效">↺ 重播</button>${
 					shot ? '<button class="cmp" type="button">📸 自查截图</button>' : ""
 				}</span></h2>`,
 				`<div class="frame"><iframe src="${escapeHtml(src)}" loading="lazy"></iframe></div>`,
@@ -218,6 +219,11 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 	.preset { padding:4px 10px; font-size:12px; border-radius:999px; border:1px solid #374151; background:#1f242b; color:#d1d5db; cursor:pointer; }
 	.preset.active { background:#2563eb; border-color:#2563eb; color:#fff; }
 	.zoom { display:flex; align-items:center; gap:6px; font-size:12px; color:#9ca3af; }
+	.mbar { display:flex; gap:6px; align-items:center; padding-left:14px; border-left:1px solid #2a2f36; flex-wrap:wrap; }
+	.mbtn { padding:4px 10px; font-size:12px; border-radius:999px; border:1px solid #374151; background:#1f242b; color:#d1d5db; cursor:pointer; }
+	.mbtn:hover { border-color:#4b5563; }
+	.mbtn.active { background:#2563eb; border-color:#2563eb; color:#fff; }
+	.mnote { font-size:11px; color:#fbbf24; }
 	.grid { display:flex; flex-wrap:wrap; gap:32px; padding:28px; align-items:flex-start; }
 	.card h2 { font-size:13px; font-weight:600; margin:0 0 10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
 	.card h2 .file { color:#6b7280; font-weight:400; font-size:11px; }
@@ -243,12 +249,20 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 		<button class="preset" data-w="768" type="button">768</button>
 		<button class="preset" data-w="1280" type="button">1280</button>
 		<label class="zoom">缩放 <input id="zoom" type="range" min="25" max="100" step="5" value="100"><span id="zoomv">100%</span></label>
+		<span class="mbar">
+			<button class="mbtn" id="mreplay" type="button" title="重播所有屏的动效">▶ 重播动效</button>
+			<button class="mbtn" id="mpause" type="button" title="暂停 / 继续所有动画">⏸ 暂停</button>
+			<button class="mbtn mspd active" data-r="1" type="button">1×</button>
+			<button class="mbtn mspd" data-r="0.5" type="button">½×</button>
+			<button class="mbtn mspd" data-r="0.25" type="button">¼×</button>
+			<span class="mnote" id="mnote" style="display:none"></span>
+		</span>
 	</div>
 </header>
 <div class="grid" id="grid">
 ${cards}
 </div>
-<footer>playground.html 由 pi-design 自动生成（每次 review 时更新）；截图对比 📸 显示模型自查用的最新渲染。</footer>
+<footer>playground.html 由 pi-design 自动生成（每次 review 时更新）；截图对比 📸 显示模型自查用的最新渲染；动效控制 ▶/⏸/慢放 需要页面接入自动生成的 ../motion.js。</footer>
 <script>
 	var curW = ${config.viewport.width};
 	function heights(w){ return w>=1280?832:w>=768?1024:w>=390?844:812; }
@@ -267,6 +281,53 @@ ${cards}
 	document.querySelectorAll('.preset').forEach(function(b){ b.addEventListener('click', function(){ setW(+b.dataset.w); }); });
 	var grid=document.getElementById('grid'), z=document.getElementById('zoom'), zv=document.getElementById('zoomv');
 	z.addEventListener('input', function(){ zv.textContent=z.value+'%'; grid.style.zoom=z.value/100; });
+	// ---- motion playback: postMessage to each screen's motion.js runtime ----
+	// Screens that include the runtime ACK (incl. a "ready" ping on load) and
+	// get smooth in-place control; screens without it fall back to an iframe
+	// reload for replay (which also restarts animations) and are flagged for
+	// pause/slow-mo being unavailable.
+	function iframes(){ return Array.prototype.slice.call(document.querySelectorAll('.frame iframe')); }
+	function post(f, action, extra){
+		try { f.contentWindow.postMessage(Object.assign({type:'pi-design:motion', action:action}, extra||{}), '*'); }
+		catch(e){ /* frame not ready */ }
+	}
+	window.addEventListener('message', function(e){
+		var d = e.data;
+		if (!d || d.type !== 'pi-design:motion-ack') return;
+		iframes().forEach(function(f){ if (f.contentWindow === e.source) f.dataset.motion = '1'; });
+	});
+	function replayFrame(f){
+		if (f.dataset.motion === '1') post(f, 'replay');
+		else { var s=f.getAttribute('src'); f.setAttribute('src', s); }
+	}
+	function noteMissing(){
+		var noRt = iframes().filter(function(f){ return f.dataset.motion !== '1'; }).length;
+		var el = document.getElementById('mnote');
+		if (noRt > 0) { el.textContent = noRt + ' 屏未接入 ../motion.js（重播可用，暂停/慢放不可用）'; el.style.display='inline'; }
+		else { el.style.display='none'; }
+	}
+	var paused = false;
+	document.getElementById('mreplay').addEventListener('click', function(){ iframes().forEach(replayFrame); });
+	document.getElementById('mpause').addEventListener('click', function(){
+		paused = !paused;
+		this.textContent = paused ? '▶ 继续' : '⏸ 暂停';
+		iframes().forEach(function(f){ if (f.dataset.motion === '1') post(f, paused ? 'pause' : 'play'); });
+		noteMissing();
+	});
+	document.querySelectorAll('.mspd').forEach(function(b){
+		b.addEventListener('click', function(){
+			var r = +b.dataset.r;
+			document.querySelectorAll('.mspd').forEach(function(x){ x.classList.toggle('active', +x.dataset.r === r); });
+			iframes().forEach(function(f){ if (f.dataset.motion === '1') post(f, 'rate', { rate: r }); });
+			noteMissing();
+		});
+	});
+	document.querySelectorAll('.card .rpl').forEach(function(b){
+		b.addEventListener('click', function(){
+			var f = b.closest('.card').querySelector('.frame iframe');
+			if (f) replayFrame(f);
+		});
+	});
 	document.querySelectorAll('.card').forEach(function(c){
 		var btn=c.querySelector('.cmp'); if(!btn) return;
 		var shot=c.dataset.shot, src=c.dataset.src, frame=c.querySelector('.frame'), showing=false;
@@ -290,6 +351,7 @@ ${cards}
 function writePlayground(screens, state, config) {
 	const paths = designPaths(CWD);
 	const shots = latestShots(paths.shotsDir, screens);
+	writeMotionRuntime(paths.prototypeDir); // playback runtime the screens include
 	const file = path.join(paths.root, "playground.html");
 	writeFileSync(file, buildPlaygroundHtml({ screens, state, config, shots }), "utf8");
 	return file;
@@ -320,16 +382,18 @@ function cmdStart(positional, flags) {
 	state.stage = "brief";
 	state.scope = scope ?? "app"; // start = reset: fresh scope unless explicitly given
 	saveState(CWD, state);
+	const runtime = writeMotionRuntime(designPaths(CWD).prototypeDir); // motion playback runtime for screens
 	console.log(
 		[
 			"# pi-design workflow (DSH CLI mode)",
 			"",
 			"This environment has no design_* tools. Use this CLI instead:",
-			`- design_render(page, viewport?)  ->  node "${CLI_PATH}" render <page> [--viewport WxH]  — then view the printed screenshot with the read_image tool before judging it`,
+			`- design_render(page, viewport?)  ->  node "${CLI_PATH}" render <page> [--viewport WxH] [--at MS]  — then view the printed screenshot with the read_image tool before judging it (--at MS captures a mid-animation frame at t=MS)`,
 			`- design_review                   ->  node "${CLI_PATH}" review  — after it returns, END YOUR TURN immediately; the browser is for viewing the design only`,
 			`- design_status {...}             ->  node "${CLI_PATH}" status --stage <stage> [--scope app|component] [--screens a,b] [--brief <text>] [--active 0|1]`,
 			`- review verdict                  ->  given by the user's NEXT CHAT MESSAGE: explicit approval -> status --stage implement; comments/rejection -> status --stage build + revise`,
 			`- end workflow                    ->  node "${CLI_PATH}" stop`,
+			`- motion runtime (auto-generated) ->  ${runtime}  — every screen includes <script src="../motion.js"></script> so the playground can replay/pause/slow-mo its animations`,
 			"",
 			"The full workflow prompt follows. Execute it strictly.",
 			"",
@@ -343,7 +407,7 @@ async function cmdRender(positional, flags) {
 	const config = loadConfig(CWD);
 	const page = positional[0];
 	if (!page) {
-		console.error("usage: pi-design render <page> [--viewport WxH]");
+		console.error("usage: pi-design render <page> [--viewport WxH] [--at MS]");
 		process.exit(2);
 	}
 	const file = path.resolve(paths.prototypeDir, page);
@@ -364,12 +428,21 @@ async function cmdRender(positional, flags) {
 		}
 		viewport = { width: Number(match[1]), height: Number(match[2]) };
 	}
+	let atMs;
+	if (flags.at !== undefined) {
+		if (!/^\d+$/.test(String(flags.at))) {
+			console.error('--at expects milliseconds after load, e.g. --at 150 (mid-animation capture)');
+			process.exit(2);
+		}
+		atMs = Number(flags.at);
+	}
+	writeMotionRuntime(paths.prototypeDir); // idempotent; resumed workflows get it too
 	const relPage = path.relative(paths.prototypeDir, file).split(path.sep).join("/");
 	mkdirSync(paths.shotsDir, { recursive: true });
 	const base = relPage.replace(/\.html?$/, "").split("/").join("-");
 	const shotKey = `${base}@${viewport.width}x${viewport.height}`;
 	const outFile = path.join(paths.shotsDir, `${shotKey}-${Date.now()}.jpg`);
-	const shot = await captureScreenshot({ htmlFile: file, outFile, viewport, exec });
+	const shot = await captureScreenshot({ htmlFile: file, outFile, viewport, exec, atMs });
 	pruneShots(paths.shotsDir, shotKey);
 	const state = loadState(CWD);
 	if (!state.screens.includes(relPage)) state.screens.push(relPage);
@@ -381,6 +454,9 @@ async function cmdRender(positional, flags) {
 		[
 			`Rendered ${relPage} @ ${viewport.width}x${viewport.height} (${shot.engine}).`,
 			`Screenshot: ${shot.file}`,
+			atMs === undefined
+				? "The capture waits for entrance animations to settle — it shows the end state."
+				: `Captured at t≈${atMs}ms — use mid-animation frames to verify motion against DESIGN.md's ## Motion inventory (timing/easing/reduced-motion).`,
 			"View it with the read_image tool NOW, then critique: alignment, visual hierarchy, whitespace, cross-screen consistency, brand consistency with .design/DESIGN.md, AI-tells.",
 			"If the current model cannot view images (read_image fails), say so and do a token-by-token code audit against DESIGN.md/tokens.css instead.",
 			"Fix what you find, then re-render. SELF-REVIEW is capped at 3 rounds per screen; at the cap, take known issues to human review.",
@@ -434,7 +510,7 @@ async function cmdReview() {
 		[
 			`Human review round ${round}: ${screens.length} screen(s) opened in the browser playground (${screens.join(", ")}).`,
 			`Playground: ${playground}`,
-			"All screens are shown in ONE page (viewport presets 375/390/768/1280, zoom, per-screen full-screen ↗, self-review-shot compare 📸); it regenerates on every review and can be reopened anytime with `pi-design playground`. The browser is for LOOKING at the design only — the verdict is given in this chat.",
+			"All screens are shown in ONE page (viewport presets 375/390/768/1280, zoom, per-screen full-screen ↗, self-review-shot compare 📸, motion playback: ▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺ 重播); it regenerates on every review and can be reopened anytime with `pi-design playground`. The browser is for LOOKING at the design only — the verdict is given in this chat.",
 			`${lintSummary}`,
 			"WAITING FOR THE HUMAN DECISION — END YOUR TURN NOW: do not output implementation plans, do not write implementation code, do not call more tools. The user's next message is the verdict: explicit approval (通过/approve/ok) → `pi-design status --stage implement`; comments or rejection → `pi-design status --stage build` and revise per the feedback.",
 		].join("\n"),
@@ -453,7 +529,7 @@ async function cmdPlayground() {
 	const file = writePlayground(screens, state, config);
 	await openInBrowser(pathToFileURL(file).href);
 	console.log(
-		`Playground: ${file}\nAll ${screens.length} screen(s) in one page — viewport presets, zoom, per-screen full-screen (↗), self-review-shot compare (📸). Read-only view; the review verdict is still given in chat.`,
+		`Playground: ${file}\nAll ${screens.length} screen(s) in one page — viewport presets, zoom, per-screen full-screen (↗), self-review-shot compare (📸), motion playback (▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺; needs screens to include ../motion.js). Read-only view; the review verdict is still given in chat.`,
 	);
 }
 
@@ -586,7 +662,9 @@ commands:
   start <brief...> [--scope app|component]
                                     reset the workflow and print the full state machine
                                     (component scope: design ONLY the requested component)
-  render <page> [--viewport WxH]    screenshot one screen (view with read_image)
+  render <page> [--viewport WxH] [--at MS]
+                                     screenshot one screen (view with read_image);
+                                     --at MS captures a mid-animation frame at t=MS
   review                            lint + open the playground (all screens in one
                                     page) in the browser (then STOP; the verdict is
                                     the user's next chat message)

@@ -12,13 +12,21 @@ import assert from "node:assert/strict";
 
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const { startReviewServer } = await jiti.import(path.resolve("extensions/server.ts"));
+const { writeMotionRuntime } = await jiti.import(path.resolve("extensions/motion.ts"));
 
 const designDir = mkdtempSync(path.join(tmpdir(), "pi-design-rvpage-"));
 mkdirSync(path.join(designDir, "prototype", "screens"), { recursive: true });
 mkdirSync(path.join(designDir, "shots"), { recursive: true });
+// Screen carries an infinite CSS animation + the motion runtime, exactly as
+// the workflow prompt instructs — the motion-control checks below rely on it.
+writeMotionRuntime(path.join(designDir, "prototype"));
 writeFileSync(
 	path.join(designDir, "prototype", "screens", "login.html"),
-	"<!doctype html><meta charset=utf-8><h1>login</h1>",
+	`<!doctype html><meta charset=utf-8><style>
+	h1 { animation: pulse 2s ease-in-out infinite alternate; }
+	@keyframes pulse { from { opacity: .35; } to { opacity: 1; } }
+	@media (prefers-reduced-motion: reduce) { h1 { animation: none; } }
+</style><h1>login</h1><script src="../motion.js"></script>`,
 );
 writeFileSync(path.join(designDir, "shots", "screens-login@390x844-1.jpg"), "fake-jpeg");
 
@@ -79,6 +87,68 @@ try {
 		await page.click("button.tool[data-shot]");
 		assert.equal(await frame.locator("img.shot").count(), 0, "img removed");
 		assert.equal(await frame.locator("iframe").count(), 1, "iframe restored");
+	});
+
+	// ---- motion playback: the page must control the screen's animations ----
+	const screenFrame = () => page.frames().find((f) => f.url().includes("login.html"));
+	const animState = (prop) =>
+		screenFrame().evaluate((p) => document.getAnimations().map((a) => a[p]), prop);
+
+	await check("motion runtime ack marks the frame (ready ping)", async () => {
+		await page.waitForFunction(
+			() => !!document.querySelector(".frame iframe")?.dataset.motion,
+			undefined,
+			{ timeout: 5000 },
+		);
+	});
+
+	await check("pause holds every animation", async () => {
+		await page.click("#mpause");
+		await page.waitForTimeout(150);
+		assert.ok((await animState("playState")).every((s) => s === "paused"), "all animations paused");
+	});
+
+	await check("play resumes", async () => {
+		await page.click("#mpause");
+		await page.waitForTimeout(150);
+		assert.ok((await animState("playState")).every((s) => s === "running"), "animations running again");
+	});
+
+	await check("slow-mo sets playbackRate", async () => {
+		await page.click('.mbtn.mspd[data-r="0.25"]');
+		await page.waitForTimeout(150);
+		assert.ok((await animState("playbackRate")).every((r) => r === 0.25), "rate applied");
+		await page.click('.mbtn.mspd[data-r="1"]');
+	});
+
+	await check("replay resets animation time", async () => {
+		await screenFrame().waitForFunction(
+			() => {
+				const a = document.getAnimations()[0];
+				return !!a && a.currentTime > 1500;
+			},
+			undefined,
+			{ timeout: 8000 },
+		);
+		await page.click("#mreplay");
+		await page.waitForTimeout(120);
+		const after = (await animState("currentTime"))[0];
+		assert.ok(after < 1200, `replay should rewind near t=0, got ${after}ms`);
+	});
+
+	await check("per-screen ↺ replays that screen", async () => {
+		await screenFrame().waitForFunction(
+			() => {
+				const a = document.getAnimations()[0];
+				return !!a && a.currentTime > 1500;
+			},
+			undefined,
+			{ timeout: 8000 },
+		);
+		await page.click("button.rpl");
+		await page.waitForTimeout(120);
+		const after = (await animState("currentTime"))[0];
+		assert.ok(after < 1200, `per-screen replay should rewind, got ${after}ms`);
 	});
 
 	await check("keyboard / focuses comment, 1 switches preset", async () => {

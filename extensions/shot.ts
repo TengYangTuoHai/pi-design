@@ -26,6 +26,14 @@ export interface ShotOptions {
 	outFile: string;
 	viewport: { width: number; height: number };
 	exec: ExecFn;
+	/**
+	 * Capture the page at this time offset after load (ms) — the tool for
+	 * self-reviewing an animation MID-FLIGHT (e.g. 150). Default: wait for
+	 * entrance animations to settle before shooting (deterministic end state).
+	 */
+	atMs?: number;
+	/** Settle wait when atMs is not given. Default 1200ms; 0 disables. */
+	settleMs?: number;
 	signal?: AbortSignal | undefined;
 	/** Overall timeout per engine attempt. Default 30s. */
 	timeoutMs?: number;
@@ -84,6 +92,10 @@ async function shootWithPlaywright(opts: ShotOptions): Promise<ShotResult> {
 			await page.goto(url, { waitUntil: "networkidle", timeout: opts.timeoutMs ?? 30_000 });
 			// String expression: waits for document.fonts.ready without pulling DOM types in.
 			await page.evaluate("document.fonts.ready");
+			// Deterministic timing: either an explicit mid-animation offset or a
+			// settle wait so entrance animations land in their end state.
+			const waitMs = opts.atMs ?? opts.settleMs ?? 1200;
+			if (waitMs > 0) await page.waitForTimeout(waitMs);
 			const type = opts.outFile.endsWith(".png") ? "png" : "jpeg";
 			await page.screenshot({
 				path: opts.outFile,
@@ -124,7 +136,9 @@ async function runChromeOnce(
 			"--force-device-scale-factor=1",
 			`--window-size=${opts.viewport.width},${opts.viewport.height}`,
 			`--screenshot=${opts.outFile}`,
-			"--virtual-time-budget=4000",
+			// Virtual time fast-forwards to the requested offset (or a settle
+			// budget): atMs captures an animation frame at ~t=atMs.
+			`--virtual-time-budget=${opts.atMs ?? 4000}`,
 			url,
 		],
 		execOptions,

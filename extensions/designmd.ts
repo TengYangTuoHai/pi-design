@@ -32,6 +32,7 @@ const CANONICAL_SECTIONS = [
 	"typography",
 	"layout",
 	"elevation & depth",
+	"motion",
 	"shapes",
 	"components",
 	"do's and don'ts",
@@ -40,6 +41,8 @@ const SECTION_ALIASES: Record<string, string> = {
 	"brand & style": "overview",
 	elevation: "elevation & depth",
 	"layout & spacing": "layout",
+	animation: "motion",
+	"motion & animation": "motion",
 };
 
 // ---------------------------------------------------------------------------
@@ -150,6 +153,7 @@ export function cssVarName(path: string[]): string {
 	if (group === "typography") return `--type-${second}-${propAliases[third ?? ""] ?? third}`;
 	if (group === "rounded") return `--rounded-${second}`;
 	if (group === "spacing") return `--spacing-${second}`;
+	if (group === "motion") return `--motion-${path.slice(1).join("-")}`;
 	if (group === "components") return `--component-${second}-${propAliases[third ?? ""] ?? third}`;
 	return `--${path.join("-")}`;
 }
@@ -246,6 +250,26 @@ export function lintDesignMd(md: string | undefined, tokensCss: string | undefin
 		add("missing-typography", "warning", "colors defined but no typography tokens");
 	}
 
+	// motion tokens: value sanity (durations are ms/s, easings are curves)
+	const motion = tree.motion && typeof tree.motion !== "string" ? tree.motion : undefined;
+	if (motion) {
+		const DURATION = /^\d*\.?\d+(ms|s)$/;
+		const EASING = /^(linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end)$|^cubic-bezier\(|^steps\(/;
+		for (const { path: p, value } of flattenTokens(motion, ["motion"])) {
+			if (refPath(value)) continue; // refs were checked above
+			const kind = p[1];
+			const bad =
+				kind === "duration" ? !DURATION.test(value) : kind === "easing" ? !EASING.test(value) : false;
+			if (bad) {
+				add(
+					"motion-token-value",
+					"warning",
+					`${p.join(".")} = "${value}" doesn't look like a ${kind ?? "motion"} value (duration: 150ms / .3s; easing: cubic-bezier(...), ease-out, steps(...))`,
+				);
+			}
+		}
+	}
+
 	// orphaned colors: never referenced by any component token
 	if (colors && tree.components && typeof tree.components !== "string") {
 		const referenced = new Set<string>();
@@ -286,6 +310,14 @@ export function lintDesignMd(md: string | undefined, tokensCss: string | undefin
 		}
 	}
 
+	// motion prose: tokens need an inventory; the inventory needs reduced-motion
+	if (motion && !seen.has("motion")) {
+		add("motion-section", "warning", "motion tokens are defined but the body has no `## Motion` section documenting the motion inventory (per screen: trigger → what moves → duration/easing)");
+	}
+	if (seen.has("motion") && !/reduced[- ]?motion/i.test(body)) {
+		add("motion-reduced", "warning", "`## Motion` doesn't mention reduced motion — document the prefers-reduced-motion fallback");
+	}
+
 	// WCAG AA contrast on component text/background pairs
 	if (tree.components && typeof tree.components !== "string") {
 		for (const [name, def] of Object.entries(tree.components)) {
@@ -306,7 +338,7 @@ export function lintDesignMd(md: string | undefined, tokensCss: string | undefin
 	// tokens.css sync: every front-matter token should project to a CSS var
 	if (tokensCss !== undefined) {
 		const declared = new Set([...tokensCss.matchAll(/--[\w-]+/g)].map((m2) => m2[0]));
-		const groups = ["colors", "typography", "rounded", "spacing", "components"];
+		const groups = ["colors", "typography", "rounded", "spacing", "motion", "components"];
 		for (const group of groups) {
 			const sub = tree[group];
 			if (!sub || typeof sub === "string") continue;

@@ -109,10 +109,14 @@ const SCREEN_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
 	body { margin:0; font-family:-apple-system,sans-serif; display:grid; place-items:center; height:100vh;
 		background:linear-gradient(160deg,#F7F5F2,#fff); color:#1A1C1E; }
-	.card { border:1px solid #ddd; border-radius:8px; padding:16px; text-align:center; }
+	.card { border:1px solid #ddd; border-radius:8px; padding:16px; text-align:center;
+		animation: enter 300ms cubic-bezier(0.2,0,0,1) both; }
+	@keyframes enter { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+	@media (prefers-reduced-motion: reduce) { .card { animation: none; } }
 	button { background:#B8422E; color:#fff; border:0; border-radius:4px; padding:12px 24px; margin-top:8px; }
 </style></head>
-<body><div class="card"><h1>Sign in</h1><button>Continue</button></div></body></html>`;
+<body><div class="card"><h1>Sign in</h1><button>Continue</button></div>
+<script src="../motion.js"></script></body></html>`;
 
 const killGate = () => {
 	const info = path.join(proj, ".design", "review-server.json");
@@ -135,6 +139,16 @@ try {
 		assert.equal(s.active, true);
 		assert.equal(s.stage, "brief");
 		assert.ok(s.brief.includes("login page"));
+	});
+	check("start: motion runtime auto-generated", () => {
+		const file = path.join(proj, ".design", "prototype", "motion.js");
+		assert.ok(existsSync(file), "motion.js missing");
+		assert.ok(readFileSync(file, "utf8").includes("pi-design motion runtime"), "runtime marker missing");
+	});
+	check("start: prints motion instructions", () => {
+		assert.ok(r.out.includes("motion runtime"), "no motion runtime line");
+		assert.ok(r.out.includes("motion.js"), "no motion.js reference");
+		assert.ok(r.out.includes("## Motion"), "workflow prompt lacks the Motion section rules");
 	});
 	check("start: exit 0", () => assert.equal(r.code, 0));
 
@@ -185,6 +199,16 @@ try {
 	check("render --viewport: accepted", () => assert.equal(r.code, 0) && r.out.includes("768x1024"));
 	r = await run(["render", "screens/login.html", "--viewport", "bogus"]);
 	check("render --viewport: rejects malformed", () => assert.equal(r.code, 2));
+
+	// ---- render at a mid-animation time offset ----
+	r = await run(["render", "screens/login.html", "--at", "150"]);
+	check("render --at: accepted + reports the offset", () => {
+		assert.equal(r.code, 0);
+		assert.ok(r.out.includes("t≈150ms"), "no t≈150ms note");
+		assert.ok(r.out.includes("## Motion"), "no motion-review hint");
+	});
+	r = await run(["render", "screens/login.html", "--at", "soon"]);
+	check("render --at: rejects non-numeric", () => assert.equal(r.code, 2));
 	r = await run(["render", "screens/missing.html"]);
 	check("render: missing page → error 1", () => {
 		assert.equal(r.code, 1);
@@ -212,6 +236,14 @@ try {
 		assert.ok(pg.includes('iframe src="prototype/screens/login.html"'), "screen iframe missing");
 		assert.ok(pg.includes('data-w="1280"') && pg.includes('data-w="375"'), "viewport presets missing");
 		assert.ok(pg.includes("自查截图") || pg.includes("cmp"), "shot-compare affordance missing");
+	});
+	check("review: playground carries motion playback controls", () => {
+		const pg = readFileSync(path.join(proj, ".design", "playground.html"), "utf8");
+		assert.ok(pg.includes('id="mreplay"'), "global replay button missing");
+		assert.ok(pg.includes('id="mpause"'), "pause button missing");
+		assert.ok(pg.includes('data-r="0.25"') && pg.includes('data-r="0.5"'), "slow-mo presets missing");
+		assert.ok(pg.includes('class="rpl"'), "per-screen replay button missing");
+		assert.ok(pg.includes("pi-design:motion"), "postMessage protocol missing");
 	});
 	check("review: state → review/round 1/no token", () => {
 		const s = j("state.json");

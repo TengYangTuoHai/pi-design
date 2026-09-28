@@ -110,6 +110,8 @@ check("cssVarName projection mapping", () => {
 	assert.equal(m.cssVarName(["typography", "body-md", "letterSpacing"]), "--type-body-md-tracking");
 	assert.equal(m.cssVarName(["rounded", "md"]), "--rounded-md");
 	assert.equal(m.cssVarName(["spacing", "sm"]), "--spacing-sm");
+	assert.equal(m.cssVarName(["motion", "duration", "fast"]), "--motion-duration-fast");
+	assert.equal(m.cssVarName(["motion", "easing", "spring"]), "--motion-easing-spring");
 	assert.equal(
 		m.cssVarName(["components", "button-primary", "backgroundColor"]),
 		"--component-button-primary-background",
@@ -183,6 +185,87 @@ check("yaml subset parser handles quoted/hash values + nesting", () => {
 	assert.equal(tree.typography["h1"].fontSize, "3rem");
 	assert.equal(tree.components["button-primary"].backgroundColor, "{colors.tertiary}");
 	assert.equal(tree.spacing.sm, "8px");
+});
+
+// ---- motion token group ------------------------------------------------------
+
+const WITH_MOTION = COMPLIANT.replace(
+	"components:\n",
+	`motion:
+  duration:
+    fast: 150ms
+    normal: 300ms
+  easing:
+    standard: cubic-bezier(0.2, 0, 0, 1)
+components:
+`,
+).replace(
+	"## Shapes",
+	`## Motion
+Entrances slide+fade 12px on normal/standard; hover tint 150ms fast.
+Respects prefers-reduced-motion: animations collapse to the final state.
+
+## Shapes`,
+);
+const WITH_MOTION_CSS = FULL_TOKENS_CSS.replace(
+	/\}\s*$/,
+	`\t--motion-duration-fast: 150ms;
+	--motion-duration-normal: 300ms;
+	--motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+`,
+);
+
+check("motion tokens + Motion section + sync'd css: clean", () => {
+	const r = m.lintDesignMd(WITH_MOTION, WITH_MOTION_CSS);
+	assert.equal(r.errors, 0, JSON.stringify(r.findings));
+	assert.equal(r.warnings, 0, JSON.stringify(r.findings));
+});
+
+check("motion tokens without ## Motion section → warning", () => {
+	const md = WITH_MOTION.replace(
+		`## Motion
+Entrances slide+fade 12px on normal/standard; hover tint 150ms fast.
+Respects prefers-reduced-motion: animations collapse to the final state.
+
+`,
+		"",
+	);
+	const r = m.lintDesignMd(md, WITH_MOTION_CSS);
+	assert.equal(r.errors, 0);
+	assert.ok(r.findings.some((f) => f.rule === "motion-section"));
+});
+
+check("## Motion without reduced-motion note → warning", () => {
+	const md = WITH_MOTION.replace(
+		"Respects prefers-reduced-motion: animations collapse to the final state.",
+		"Everything eases in.",
+	);
+	const r = m.lintDesignMd(md, WITH_MOTION_CSS);
+	assert.ok(r.findings.some((f) => f.rule === "motion-reduced"));
+	assert.equal(r.errors, 0);
+});
+
+check("malformed motion values → warning", () => {
+	const md = WITH_MOTION.replace("fast: 150ms", "fast: instant");
+	const r = m.lintDesignMd(md, WITH_MOTION_CSS);
+	assert.ok(r.findings.some((f) => f.rule === "motion-token-value" && f.message.includes("duration.fast")));
+	assert.equal(r.errors, 0);
+});
+
+check("tokens.css missing motion vars → sync warning", () => {
+	const r = m.lintDesignMd(WITH_MOTION, FULL_TOKENS_CSS);
+	const sync = r.findings.filter((f) => f.rule === "tokens-sync");
+	assert.ok(sync.some((f) => f.message.includes("--motion-duration-fast")));
+	assert.ok(sync.some((f) => f.message.includes("--motion-easing-standard")));
+	assert.equal(r.errors, 0);
+});
+
+check("motion alias headings canonicalize", () => {
+	const md = WITH_MOTION.replace("## Motion", "## Motion & Animation");
+	const r = m.lintDesignMd(md, WITH_MOTION_CSS);
+	assert.ok(!r.findings.some((f) => f.rule === "motion-section"), "alias should count as the Motion section");
+	assert.ok(!r.findings.some((f) => f.rule === "duplicate-section"));
 });
 
 console.log(results.join("\n"));

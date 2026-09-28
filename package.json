@@ -46,6 +46,7 @@
     "smoke:review": "node scripts/smoke-review-page.mjs",
     "smoke:designmd": "node scripts/smoke-designmd.mjs",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
-    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd && npm run smoke:dsh"
+    "smoke:playground": "node scripts/smoke-playground.mjs",
+    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd && npm run smoke:dsh && npm run smoke:playground"
   }
 }

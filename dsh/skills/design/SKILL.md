@@ -27,7 +27,8 @@ Then run (from the target project root):
 ```sh
 node "$PI_DESIGN" start "<brief>" [--scope app|component]
                                          # start/reset; prints the full workflow
-node "$PI_DESIGN" render <page> [--viewport WxH]   # screenshot; view with read_image
+node "$PI_DESIGN" render <page> [--viewport WxH] [--at MS]   # screenshot; view with read_image
+                                         # (--at MS captures a mid-animation frame)
 node "$PI_DESIGN" review                 # regenerate the playground, open it — then STOP
 node "$PI_DESIGN" playground             # (re)open the all-screens playground (read-only)
 node "$PI_DESIGN" status --stage <s>     # persist every stage transition
@@ -64,10 +65,17 @@ follow them strictly:
    token-by-token code audit against DESIGN.md/tokens.css instead.
    Self-review is capped at 3 rounds per screen; at the cap, take the
    known issues to human review instead of looping.
+2b. **Motion is part of the design** (full rules in the `start` output):
+   durations/easings come from `--motion-*` tokens only, animations are
+   declarative CSS/WAAPI (no rAF loops), every screen includes the
+   auto-generated `<script src="../motion.js"></script>` before `</body>`
+   plus a `prefers-reduced-motion` fallback, and DESIGN.md carries a
+   `## Motion` inventory. Verify mid-animation with `render --at <ms>`.
 3. **Human gate is a hard stop**: call `review` only after every screen passed
    self-review. It (re)generates `.design/playground.html` — every current
    screen in ONE page (viewport presets, zoom, per-screen full-screen ↗,
-   self-review-shot compare 📸) — and opens it in the user's browser. The
+   self-review-shot compare 📸, motion playback ▶/⏸/½× ¼×, per-screen ↺) —
+   and opens it in the user's browser. The
    playground is read-only; there are no decision buttons. After `review`
    returns, END THE TURN — no implementation plans, no code, no further tool
    calls. `playground` reopens the view anytime without touching state.

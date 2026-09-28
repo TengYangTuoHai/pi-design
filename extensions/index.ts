@@ -28,6 +28,7 @@ import {
 	type DesignStage,
 } from "./types.ts";
 import { captureScreenshot } from "./shot.ts";
+import { writeMotionRuntime } from "./motion.ts";
 import { lintDesignMd } from "./designmd.ts";
 import { startReviewServer, type ReviewServerHandle, type ReviewServerOptions } from "./server.ts";
 import {
@@ -407,6 +408,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 			state.brief = brief;
 			state.stage = "brief";
 			saveState(ctx.cwd, state);
+			writeMotionRuntime(designPaths(ctx.cwd).prototypeDir); // screens include it for motion playback
 			activateTools(pi, session);
 			pi.sendUserMessage(buildWorkflowPrompt({ brief, state, config }));
 			// One-shot modes (print/text) exit as soon as the command handler returns,
@@ -432,6 +434,12 @@ export default function designExtension(pi: ExtensionAPI): void {
 					height: Type.Integer({ description: "Viewport height (px)" }),
 				}),
 			),
+			atMs: Type.Optional(
+				Type.Integer({
+					description:
+						"Capture the page at this time offset after load (ms) instead of the settled end state — pass e.g. 150 to verify an animation mid-flight against DESIGN.md's ## Motion inventory",
+				}),
+			),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const paths = designPaths(ctx.cwd);
@@ -452,12 +460,14 @@ export default function designExtension(pi: ExtensionAPI): void {
 			// Viewport tag keeps multi-viewport shots from overwriting each other's prune set.
 			const shotKey = `${base}@${viewport.width}x${viewport.height}`;
 			const outFile = path.join(paths.shotsDir, `${shotKey}-${Date.now()}.jpg`);
+			writeMotionRuntime(paths.prototypeDir); // idempotent; screens depend on it existing
 			const shot = await captureScreenshot({
 				htmlFile: file,
 				outFile,
 				viewport,
 				exec: (command, args, options) => pi.exec(command, args, options),
 				signal,
+				...(params.atMs !== undefined ? { atMs: params.atMs } : {}),
 			});
 			const data = readFileSync(shot.file).toString("base64");
 			pruneShots(paths.shotsDir, shotKey);
@@ -471,7 +481,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text: `Rendered ${params.page} @ ${viewport.width}x${viewport.height} (${shot.engine}; screenshot attached).\nCheck the screenshot for: alignment, visual hierarchy, whitespace, cross-screen consistency, AI-tells.`,
+						text: `Rendered ${params.page} @ ${viewport.width}x${viewport.height} (${shot.engine}; screenshot attached${params.atMs !== undefined ? `; captured at t≈${params.atMs}ms for mid-animation review` : "; entrance animations settled"}).\nCheck the screenshot for: alignment, visual hierarchy, whitespace, cross-screen consistency, AI-tells.`,
 					},
 					{ type: "image", data, mimeType: shot.mimeType },
 				],
@@ -536,6 +546,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 							.map((f) => `- [${f.rule}] ${f.message}`)
 							.join("\n")}`
 					: "\nDESIGN.md lint: clean.";
+			writeMotionRuntime(paths.prototypeDir); // review page plays motion through it
 			await closeServer(session); // fresh round → fresh server process, stable URL
 			killExternalReview(session);
 			const serverOpts: ReviewServerOptions = {
@@ -571,7 +582,7 @@ export default function designExtension(pi: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text: `Human review gate is open (round ${round}, ${screens.length} screen(s)): ${url}\nIt opens in the default browser (or visit the URL manually). This URL is stable for the whole workflow — the same tab keeps working across review rounds. The page stays reachable even after this session exits; the verdict is applied live, or picked up the next time a pi session starts in this project.${lintSummary}\nWaiting for the human decision — the turn ends here; do not start implementing.`,
+						text: `Human review gate is open (round ${round}, ${screens.length} screen(s)): ${url}\nIt opens in the default browser (or visit the URL manually). This URL is stable for the whole workflow — the same tab keeps working across review rounds. The page stays reachable even after this session exits; the verdict is applied live, or picked up the next time a pi session starts in this project. The page can PLAY motion (▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺) — motion is part of what the human judges.${lintSummary}\nWaiting for the human decision — the turn ends here; do not start implementing.`,
 					},
 				],
 				details: { url, round, screens, external: external !== null },
