@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../tokens.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--type-body-md-family);
+      font-size: var(--type-body-md-size);
+      font-weight: var(--type-body-md-weight);
+      line-height: var(--type-body-md-line-height);
+      color: var(--color-neutral);
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--spacing-lg);
+    }
+
+    .login-card {
+      background: var(--component-card-background);
+      border-radius: var(--component-card-rounded);
+      padding: var(--component-card-padding);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 20px 60px rgba(0,0,0,0.15);
+      width: 100%;
+      max-width: 420px;
+      opacity: 0;
+      transform: translateY(12px);
+      animation: slideInUp var(--motion-duration-normal) var(--motion-easing-standard) forwards;
+    }
+
+    @keyframes slideInUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+      background: var(--color-primary);
+      border-radius: var(--rounded-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto var(--spacing-lg);
+      color: white;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    h1 {
+      font-family: var(--type-h1-family);
+      font-size: var(--type-h1-size);
+      font-weight: var(--type-h1-weight);
+      line-height: var(--type-h1-line-height);
+      letter-spacing: var(--type-h1-tracking);
+      text-align: center;
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .subtitle {
+      font-size: var(--type-body-sm-size);
+      color: var(--color-secondary);
+      text-align: center;
+      margin-bottom: var(--spacing-xl);
+    }
+
+    .form-group {
+      margin-bottom: var(--spacing-lg);
+    }
+
+    label {
+      display: block;
+      font-family: var(--type-label-family);
+      font-size: var(--type-label-size);
+      font-weight: var(--type-label-weight);
+      line-height: var(--type-label-line-height);
+      margin-bottom: var(--spacing-sm);
+    }
+
+    input {
+      width: 100%;
+      height: var(--component-input-height);
+      padding: var(--component-input-padding);
+      background: var(--component-input-background);
+      border: 1px solid var(--color-tertiary);
+      border-radius: var(--component-input-rounded);
+      font-family: var(--type-body-md-family);
+      font-size: var(--type-body-md-size);
+      color: var(--component-input-text);
+      transition: border-color var(--motion-duration-fast) var(--motion-easing-standard);
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--color-primary);
+    }
+
+    input::placeholder {
+      color: var(--color-secondary);
+      opacity: 0.6;
+    }
+
+    .password-wrapper {
+      position: relative;
+    }
+
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--color-secondary);
+      cursor: pointer;
+      padding: var(--spacing-sm);
+      font-size: var(--type-body-sm-size);
+    }
+
+    .forgot-password {
+      text-align: right;
+      margin-top: var(--spacing-sm);
+    }
+
+    .forgot-password a {
+      color: var(--color-primary);
+      text-decoration: none;
+      font-size: var(--type-body-sm-size);
+      font-weight: 500;
+      transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+    }
+
+    .forgot-password a:hover {
+      opacity: 0.8;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      height: var(--component-button-primary-height);
+      padding: var(--component-button-primary-padding);
+      background: var(--component-button-primary-background);
+      color: var(--component-button-primary-text);
+      border: none;
+      border-radius: var(--component-button-primary-rounded);
+      font-family: var(--type-body-md-family);
+      font-size: var(--type-body-md-size);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color var(--motion-duration-fast) var(--motion-easing-standard);
+      margin-top: var(--spacing-lg);
+    }
+
+    button[type="submit"]:hover {
+      background: #2952d9;
+    }
+
+    button[type="submit"]:active {
+      transform: scale(0.98);
+    }
+
+    .divider {
+      text-align: center;
+      margin: var(--spacing-lg) 0;
+      position: relative;
+      color: var(--color-secondary);
+      font-size: var(--type-body-sm-size);
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: calc(50% - 30px);
+      height: 1px;
+      background: var(--color-tertiary);
+    }
+
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+
+    .signup-link {
+      text-align: center;
+      margin-top: var(--spacing-lg);
+      font-size: var(--type-body-sm-size);
+      color: var(--color-secondary);
+    }
+
+    .signup-link a {
+      color: var(--color-primary);
+      text-decoration: none;
+      font-weight: 600;
+      transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+    }
+
+    .signup-link a:hover {
+      opacity: 0.8;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .login-card {
+        animation: none;
+        opacity: 1;
+        transform: none;
+      }
+      
+      * {
+        transition: none !important;
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: var(--spacing-md);
+      }
+
+      .login-card {
+        padding: var(--spacing-lg);
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="logo">P</div>
+    
+    <h1>Welcome back</h1>
+    <p class="subtitle">Sign in to your account to continue</p>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input 
+          type="email" 
+          id="email" 
+          name="email" 
+          placeholder="you@example.com"
+          required
+          autocomplete="email"
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="password-wrapper">
+          <input 
+            type="password" 
+            id="password" 
+            name="password" 
+            placeholder="Enter your password"
+            required
+            autocomplete="current-password"
+          >
+          <button type="button" class="toggle-password" aria-label="Toggle password visibility">
+            👁
+          </button>
+        </div>
+        <div class="forgot-password">
+          <a href="#forgot">Forgot password?</a>
+        </div>
+      </div>
+
+      <button type="submit">Sign in</button>
+    </form>
+
+    <div class="signup-link">
+      Don't have an account? <a href="#signup">Sign up</a>
+    </div>
+  </div>
+
+  <script src="../motion.js"></script>
+  <script>
+    // Password toggle
+    document.querySelector('.toggle-password').addEventListener('click', function() {
+      const passwordInput = document.getElementById('password');
+      const type = passwordInput.type === 'password' ? 'text' : 'password';
+      passwordInput.type = type;
+      this.textContent = type === 'password' ? '👁' : '👁‍🗨';
+    });
+
+    // Form submission (demo)
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      console.log('Form submitted:', {
+        email: document.getElementById('email').value,
+        password: '***'
+      });
+      alert('Login submitted (demo mode)');
+    });
+  </script>
+</body>
+</html>

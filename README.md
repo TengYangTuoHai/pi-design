@@ -4,6 +4,37 @@ A [Pi](https://github.com/earendil-works) extension that turns a design brief in
 
 `/design <brief>` → the model autonomously produces a high-fidelity HTML prototype and iterates on it → a human reviews it in a local browser → once approved, the prototype becomes the spec for implementing real UI in your target stack.
 
+## 🚀 [Quick Start (5 minutes)](./QUICKSTART.md) | 📚 [Examples](./examples/) | 🗺️ [Roadmap](./ROADMAP.md) | 📸 [Screenshots](./docs/SCREENSHOT_GUIDE.md)
+
+## 📸 See It In Action
+
+<table>
+  <tr>
+    <td width="30%" align="center">
+      <img src="assets/screenshots/login-mobile-placeholder.svg" alt="Mobile View" width="130"/><br/>
+      <sub>📱 Mobile (390x844)</sub>
+    </td>
+    <td width="35%" align="center">
+      <img src="assets/screenshots/login-tablet-placeholder.svg" alt="Tablet View" width="200"/><br/>
+      <sub>📱 Tablet (768x1024)</sub>
+    </td>
+    <td width="35%" align="center">
+      <img src="assets/screenshots/login-desktop-placeholder.svg" alt="Desktop View" width="280"/><br/>
+      <sub>💻 Desktop (1280x800)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center">
+      <sub><em>Example: Login page from <code>/design 一个简约登录页面</code></em></sub><br/>
+      <sub>👉 <a href="examples/01-login-page/">View full example</a> | <a href="examples/01-login-page/.design/prototype/screens/login.html">Open live preview</a></sub>
+    </td>
+  </tr>
+</table>
+
+> **💡 Tip:** These are placeholder diagrams. Generate actual screenshots by following the [Screenshot Guide](docs/SCREENSHOT_GUIDE.md).
+
+## How It Works
+
 ```text
 BRIEF → PLAN → BUILD → SELF-REVIEW (≤3 rounds/screen) → REVIEW (human gate) ─┬→ rejected + feedback → BUILD
                                                                              └→ approved → IMPLEMENT → done

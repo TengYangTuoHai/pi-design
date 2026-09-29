@@ -1,0 +1,8 @@
+{
+  "stage": "done",
+  "scope": "app",
+  "screens": ["screens/login.html"],
+  "workflowToken": "example-token-12345",
+  "currentScreen": "screens/login.html",
+  "selfReviewRound": 0
+}
