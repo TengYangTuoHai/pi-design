@@ -292,6 +292,60 @@ try {
 	});
 	r = await run([]);
 	check("no command: usage exit 2", () => assert.equal(r.code, 2) && r.out.includes("usage:"));
+
+	// ---- preset command + start --preset (real presets from presets/) ----
+	r = await run(["preset", "list"]);
+	check("preset list: exit 0 with catalog", () => {
+		assert.equal(r.code, 0);
+		assert.ok(r.out.includes("Built-in presets (standard token names across all):"), r.out);
+		assert.ok(r.out.includes("spectrum") && r.out.includes("Adobe"), r.out);
+	});
+
+	r = await run(["start", "一个登录页", "--preset", "spectrum"]);
+	check("start --preset spectrum: applies DESIGN.md + tokens.css + state", () => {
+		assert.equal(r.code, 0);
+		assert.equal(
+			readFileSync(path.join(proj, ".design", "DESIGN.md"), "utf8"),
+			readFileSync(path.join(REPO, "presets", "spectrum.md"), "utf8"),
+		);
+		assert.ok(readFileSync(path.join(proj, ".design", "tokens.css"), "utf8").includes("--color-primary"));
+		assert.equal(j("state.json").preset, "spectrum");
+		assert.ok(r.out.includes("built-in preset `spectrum`"), r.out);
+		assert.ok(r.out.includes("design_preset {...}"), r.out);
+	});
+
+	r = await run(["preset", "apply", "material3"]);
+	check("preset apply without force on existing DESIGN.md: exit 1", () => {
+		assert.equal(r.code, 1);
+		assert.ok(r.out.includes("already exists"), r.out);
+	});
+
+	r = await run(["preset", "apply", "material3", "--force"]);
+	check("preset apply --force: spectrum kept as .bak + fonts note", () => {
+		assert.equal(r.code, 0);
+		assert.equal(
+			readFileSync(path.join(proj, ".design", "DESIGN.md.bak"), "utf8"),
+			readFileSync(path.join(REPO, "presets", "spectrum.md"), "utf8"),
+		);
+		assert.ok(r.out.includes("Fonts:"), r.out);
+	});
+
+	r = await run(["preset", "sync"]);
+	check("preset sync: exit 0", () => assert.equal(r.code, 0));
+
+	r = await run(["start", "x", "--preset", "nope"]);
+	check("start --preset unknown: exit 2, state untouched", () => {
+		assert.equal(r.code, 2);
+		assert.ok(r.out.includes('unknown preset "nope"'), r.out);
+		assert.equal(j("state.json").preset, "material3");
+	});
+
+	r = await run(["start", "另一个需求"]);
+	check("start without --preset: preset cleared + BUILT-IN PRESET fallback", () => {
+		assert.equal(r.code, 0);
+		assert.equal(j("state.json").preset, undefined);
+		assert.ok(r.out.includes("BUILT-IN PRESET"), r.out);
+	});
 } finally {
 	killGate();
 	try {

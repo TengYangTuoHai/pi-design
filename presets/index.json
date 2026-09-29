@@ -1,0 +1,140 @@
+[
+  {
+    "id": "material3",
+    "name": "Material 3",
+    "company": "Google",
+    "license": "Apache-2.0",
+    "homepage": "https://m3.material.io",
+    "sources": [
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/latest/sass/_md-sys-color.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/latest/sass/_md-ref-palette.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/latest/sass/_md-sys-typescale.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/latest/sass/_md-sys-shape.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/latest/sass/_md-sys-motion.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/latest/sass/_md-sys-elevation.scss",
+      "https://github.com/material-components/material-web/blob/main/elevation/internal/_elevation.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/v0_192/_md-comp-filled-button.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/v0_192/_md-comp-filled-card.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/v0_192/_md-comp-filter-chip.scss",
+      "https://github.com/material-components/material-web/blob/main/tokens/versions/v0_192/_md-ref-typeface.scss"
+    ],
+    "fonts": {
+      "sans": "Roboto",
+      "mono": "Roboto Mono",
+      "googleFontsCss": "https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&family=Roboto+Mono:wght@100..700&display=swap"
+    },
+    "bestFor": "Consumer mobile/Android-style apps — friendly, colorful, tonal surfaces with large touch targets."
+  },
+  {
+    "id": "fluent2",
+    "name": "Fluent 2",
+    "company": "Microsoft",
+    "license": "MIT",
+    "homepage": "https://fluent2.microsoft.design",
+    "sources": [
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/alias/lightColor.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/alias/lightColorPalette.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/brandColors.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/colors.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/borderRadius.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/fonts.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/spacings.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/durations.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/curves.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/utils/shadows.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/tokens/src/global/typographyStyles.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts",
+      "https://github.com/microsoft/fluentui/blob/master/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts"
+    ],
+    "fonts": {
+      "sans": "\"Segoe UI Variable\", \"Segoe UI\", system-ui, sans-serif",
+      "mono": "Consolas, \"Courier New\", Courier, monospace",
+      "googleFontsCss": null
+    },
+    "bestFor": "Productivity and Windows/Office-style desktop tools — dense, neutral enterprise UI with a disciplined blue."
+  },
+  {
+    "id": "carbon",
+    "name": "Carbon",
+    "company": "IBM",
+    "license": "Apache-2.0",
+    "homepage": "https://carbondesignsystem.com",
+    "sources": [
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/themes/src/dtcg/themes.json",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/colors/src/dtcg/colors.json",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/layout/src/dtcg/layout.json",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/motion/src/dtcg/motion.json",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/type/src/styles.ts",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/type/src/fontFamily.ts",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/themes/src/dtcg/components/button.json",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/themes/src/dtcg/components/tag.json",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/styles/scss/components/button/_vars.scss",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/styles/scss/components/tag/_tag.scss",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/styles/scss/components/text-input/_text-input.scss",
+      "https://github.com/carbon-design-system/carbon/blob/main/packages/styles/scss/utilities/_box-shadow.scss"
+    ],
+    "fonts": {
+      "sans": "IBM Plex Sans",
+      "mono": "IBM Plex Mono",
+      "googleFontsCss": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    },
+    "bestFor": "Data-dense enterprise products — analytics consoles, admin dashboards, and complex workflow tools."
+  },
+  {
+    "id": "primer",
+    "name": "Primer",
+    "company": "GitHub",
+    "license": "MIT",
+    "homepage": "https://primer.style",
+    "sources": [
+      "https://github.com/primer/primitives/blob/main/src/tokens/base/color/light/light.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/color/fgColor.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/color/bgColor.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/color/borderColor.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/color/control.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/typography/typography.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/base/typography/typography.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/size/radius.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/size/size.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/base/size/size.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/spacing/space.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/shadow/shadow.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/base/motion/easing.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/base/motion/timing.json5",
+      "https://github.com/primer/primitives/blob/main/src/tokens/functional/motion/motion.json5",
+      "https://github.com/primer/react/blob/main/packages/react/src/Button/ButtonBase.module.css"
+    ],
+    "fonts": {
+      "sans": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif",
+      "mono": "ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace",
+      "googleFontsCss": null
+    },
+    "bestFor": "Developer tools and code-centric UIs — documentation, issue trackers, quiet and utilitarian."
+  },
+  {
+    "id": "spectrum",
+    "name": "Spectrum",
+    "company": "Adobe",
+    "license": "Apache-2.0",
+    "homepage": "https://spectrum.adobe.com",
+    "sources": [
+      "https://www.npmjs.com/package/@adobe/spectrum-tokens (v12.1.2) package/src/color-palette.json",
+      "https://www.npmjs.com/package/@adobe/spectrum-tokens (v12.1.2) package/src/semantic-color-palette.json",
+      "https://www.npmjs.com/package/@adobe/spectrum-tokens (v12.1.2) package/src/color-aliases.json",
+      "https://www.npmjs.com/package/@adobe/spectrum-tokens (v12.1.2) package/src/layout.json",
+      "https://www.npmjs.com/package/@adobe/spectrum-tokens (v12.1.2) package/src/layout-component.json",
+      "https://www.npmjs.com/package/@adobe/spectrum-tokens (v12.1.2) package/src/typography.json",
+      "https://github.com/adobe/spectrum-css/blob/main/components/button/index.css",
+      "https://github.com/adobe/spectrum-css/blob/main/components/tag/index.css",
+      "https://github.com/adobe/spectrum-css/blob/main/components/textfield/index.css",
+      "https://www.npmjs.com/package/@spectrum-css/tokens (v10.2.0) dist/css/medium-vars.css",
+      "https://www.npmjs.com/package/@spectrum-css/tokens (v10.2.0) dist/css/spectrum/custom-vars.css"
+    ],
+    "fonts": {
+      "sans": "Source Sans 3",
+      "mono": "Source Code Pro",
+      "googleFontsCss": "https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300..900&family=Source+Code+Pro:wght@400..700&display=swap"
+    },
+    "bestFor": "Creative and media tools — content-heavy editors, asset managers, and professional panels."
+  }
+]

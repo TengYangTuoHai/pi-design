@@ -30,8 +30,10 @@ import {
 import { captureScreenshot } from "./shot.ts";
 import { writeMotionRuntime } from "./motion.ts";
 import { lintDesignMd } from "./designmd.ts";
+import { applyPreset, findPreset, listPresets, presetCatalog, syncTokens } from "./presets.ts";
 import { startReviewServer, type ReviewServerHandle, type ReviewServerOptions } from "./server.ts";
 import {
+	PRESET_TOOL_GUIDELINES,
 	RENDER_TOOL_GUIDELINES,
 	REVIEW_TOOL_GUIDELINES,
 	STATUS_TOOL_GUIDELINES,
@@ -385,9 +387,19 @@ export default function designExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("design", {
 		description: "高保真原型工作流：/design <设计要求>（/design stop 结束）",
 		handler: async (args, ctx) => {
-			const brief = args.trim();
+			// /design [--preset <id>] <brief> — an explicit preset is applied (with
+			// backup) before the workflow prompt goes out.
+			const m = /^--preset\s+(\S+)\s*/.exec(args.trim());
+			const presetId = m?.[1];
+			const brief = m ? args.trim().slice(m[0].length).trim() : args.trim();
 			if (!brief) {
-				if (ctx.hasUI) ctx.ui.notify("用法：/design <设计要求>；结束工作流：/design stop", "warning");
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						`用法：/design [--preset <预设>] <设计要求>；结束：/design stop；内置预设：${listPresets()
+							.map((p) => p.id)
+							.join("、")}`,
+						"warning",
+					);
 				return;
 			}
 			if (brief === "stop") {
@@ -404,9 +416,25 @@ export default function designExtension(pi: ExtensionAPI): void {
 			}
 			const config = loadConfig(ctx.cwd);
 			const state = loadState(ctx.cwd);
+			if (presetId) {
+				const preset = findPreset(presetId);
+				if (!preset) {
+					if (ctx.hasUI)
+						ctx.ui.notify(`未知预设 ${presetId}，可用：${listPresets().map((p) => p.id).join("、")}`, "warning");
+					return; // unknown preset: touch nothing
+				}
+				// Explicit user choice replaces an existing DESIGN.md, with backup.
+				const result = applyPreset(designPaths(ctx.cwd).root, presetId, { force: true });
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						`已套用预设 ${preset.name}（${preset.company}）${result.backup ? "；原 DESIGN.md 已备份为 DESIGN.md.bak" : ""}`,
+						"info",
+					);
+			}
 			state.active = true;
 			state.brief = brief;
 			state.stage = "brief";
+			state.preset = presetId ?? undefined; // a new /design without --preset clears it
 			saveState(ctx.cwd, state);
 			writeMotionRuntime(designPaths(ctx.cwd).prototypeDir); // screens include it for motion playback
 			activateTools(pi, session);
@@ -590,6 +618,64 @@ export default function designExtension(pi: ExtensionAPI): void {
 			};
 		},
 	}),
+	);
+
+	pi.registerTool(
+		defineTool({
+			name: "design_preset",
+			label: "Design preset",
+			description:
+				"Built-in DESIGN.md presets adapted from big-company open-source design systems. action list → the catalog (id, company, what it fits); apply {id, force?} → writes .design/DESIGN.md + tokens.css (refuses to replace an existing DESIGN.md unless force); sync → regenerates tokens.css from the current DESIGN.md front matter.",
+			promptGuidelines: PRESET_TOOL_GUIDELINES,
+			parameters: Type.Object({
+				action: Type.Union([Type.Literal("list"), Type.Literal("apply"), Type.Literal("sync")]),
+				id: Type.Optional(Type.String()),
+				force: Type.Optional(Type.Boolean()),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				const designDir = designPaths(ctx.cwd).root;
+				const state = loadState(ctx.cwd);
+				let text: string;
+				if (params.action === "list") {
+					text = `Built-in presets (standard token names across all):\n${presetCatalog()}`;
+				} else if (params.action === "apply") {
+					if (!params.id) {
+						text = `design_preset apply needs an id — one of: ${listPresets().map((p) => p.id).join(", ")}`;
+					} else {
+						try {
+							const result = applyPreset(designDir, params.id, { force: params.force === true });
+							state.preset = result.preset.id;
+							saveState(ctx.cwd, state);
+							const lines = [
+								`Applied preset ${result.preset.name} (${result.preset.company}, ${result.preset.license}) → .design/DESIGN.md + .design/tokens.css.`,
+							];
+							if (result.backup) lines.push(`Previous DESIGN.md kept as ${result.backup} (tokens.css.bak too).`);
+							lines.push(
+								result.preset.fonts.googleFontsCss !== null
+									? `Fonts: every screen links <link rel="stylesheet" href="${result.preset.fonts.googleFontsCss}"> in <head>.`
+									: "Fonts: system stack (no web font to link).",
+							);
+							lines.push(
+								"Token names are the standard preset set (var(--color-primary), var(--type-body-md-size), …); attribution stays in DESIGN.md ## Overview.",
+							);
+							text = lines.join("\n");
+						} catch (error) {
+							text = `design_preset failed: ${error instanceof Error ? error.message : String(error)}`;
+						}
+					}
+				} else {
+					try {
+						text = `tokens.css regenerated from DESIGN.md: ${syncTokens(designDir)}`;
+					} catch (error) {
+						text = `design_preset failed: ${error instanceof Error ? error.message : String(error)}`;
+					}
+				}
+				return {
+					content: [{ type: "text", text }],
+					details: { action: params.action, preset: state.preset ?? null },
+				};
+			},
+		}),
 	);
 
 	pi.registerTool(

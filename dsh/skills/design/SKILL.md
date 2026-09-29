@@ -25,15 +25,23 @@ Resolve the CLI once (fallback chain, first that exists wins):
 Then run (from the target project root):
 
 ```sh
-node "$PI_DESIGN" start "<brief>" [--scope app|component]
+node "$PI_DESIGN" start "<brief>" [--scope app|component] [--preset <id>]
                                          # start/reset; prints the full workflow
 node "$PI_DESIGN" render <page> [--viewport WxH] [--at MS]   # screenshot; view with read_image
                                          # (--at MS captures a mid-animation frame)
 node "$PI_DESIGN" review                 # regenerate the playground, open it — then STOP
 node "$PI_DESIGN" playground             # (re)open the all-screens playground (read-only)
 node "$PI_DESIGN" status --stage <s>     # persist every stage transition
+node "$PI_DESIGN" preset list                # built-in design systems (apply one only when the user has no direction)
 node "$PI_DESIGN" stop                   # end the workflow
 ```
+
+## Built-in presets
+
+If the user names a preset ("用 Material 风格", "like GitHub/Primer", "Carbon"), pass it as
+`--preset <id>` to `start` (ids: material3, fluent2, carbon, primer, spectrum).
+If the user gives no design direction at all, don't ask — the workflow's BRIEF rules pick
+and apply the best-fitting preset via `preset apply <id>`.
 
 ## Scope: app vs component
 

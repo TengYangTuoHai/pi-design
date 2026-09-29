@@ -100,11 +100,12 @@ export function parseYamlSubset(text: string): YamlNode {
 
 function stripScalar(value: string): string {
 	const v = value.trim();
-	if (
-		(v.startsWith('"') && v.endsWith('"') && v.length >= 2) ||
-		(v.startsWith("'") && v.endsWith("'") && v.length >= 2)
-	) {
-		return v.slice(1, -1);
+	if (v.startsWith('"') && v.endsWith('"') && v.length >= 2) {
+		// YAML double-quoted scalar: honor \" and \\ escapes (font stacks quote family names).
+		return v.slice(1, -1).replace(/\\(["\\])/g, "$1");
+	}
+	if (v.startsWith("'") && v.endsWith("'") && v.length >= 2) {
+		return v.slice(1, -1).replace(/''/g, "'"); // YAML single-quoted: '' is a literal quote
 	}
 	return v;
 }
@@ -360,4 +361,48 @@ function report(findings: Finding[]): LintReport {
 		errors: findings.filter((f) => f.severity === "error").length,
 		warnings: findings.filter((f) => f.severity === "warning").length,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// tokens.css projection (deterministic; the file the lint's tokens-sync checks)
+// ---------------------------------------------------------------------------
+
+const PROJECTION_SKIP = new Set(["name", "description", "version"]);
+
+/**
+ * Projects a DESIGN.md front matter onto tokens.css: one custom property per
+ * token leaf (names via cssVarName). References become var(): a whole-value
+ * ref to a leaf → var(--x); a ref to a typography group → a `font` shorthand
+ * built from that group's vars; refs embedded in a longer value
+ * ("1px solid {colors.outline}") are substituted in place.
+ */
+export function projectTokensCss(md: string): string {
+	const { frontMatter } = splitFrontMatter(md);
+	if (!frontMatter) throw new Error("DESIGN.md has no front matter");
+	const tree = parseYamlSubset(frontMatter);
+	const refToCss = (ref: string[]): string => {
+		const target = resolvePath(tree, ref);
+		if (target === undefined) throw new Error(`unresolved reference {${ref.join(".")}}`);
+		if (typeof target === "string") return `var(${cssVarName(ref)})`;
+		if (ref[0] === "typography") {
+			const v = (prop: string) => (prop in target ? `var(${cssVarName([...ref, prop])})` : "");
+			const size = v("fontSize") + (v("lineHeight") ? `/${v("lineHeight")}` : "");
+			return [v("fontWeight"), size, v("fontFamily")].filter(Boolean).join(" ");
+		}
+		throw new Error(`{${ref.join(".")}} points at a group, not a token`);
+	};
+	const lines: string[] = [];
+	for (const [group, sub] of Object.entries(tree)) {
+		if (PROJECTION_SKIP.has(group) || typeof sub === "string") continue;
+		lines.push("", `  /* ${group} */`);
+		for (const { path, value } of flattenTokens(sub, [group])) {
+			const whole = refPath(value);
+			const css = whole
+				? refToCss(whole)
+				: value.replace(/\{\s*([^}]+?)\s*\}/g, (_m, inner: string) => refToCss(inner.trim().split(".")));
+			lines.push(`  ${cssVarName(path)}: ${css};`);
+		}
+	}
+	const name = typeof tree.name === "string" ? ` — ${tree.name}` : "";
+	return `/* tokens.css${name}\n   Generated from .design/DESIGN.md front matter (deterministic projection). Do not hand-edit: change DESIGN.md and regenerate. */\n:root {${lines.join("\n")}\n}\n`;
 }

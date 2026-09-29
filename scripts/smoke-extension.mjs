@@ -38,7 +38,7 @@ const pi = {
 };
 
 mod.default(pi);
-for (const name of ["design_render", "design_review", "design_status"]) {
+for (const name of ["design_render", "design_review", "design_status", "design_preset"]) {
 	assert.ok(tools.has(name), `tool ${name} registered`);
 }
 assert.ok(commands.has("design"), "command /design registered");
@@ -191,9 +191,71 @@ await check("round 2 reuses the same gate URL (fixed port + stable token)", asyn
 	await new Promise((r) => setTimeout(r, 200));
 });
 
+// ---- design_preset tool + /design --preset flag (real presets/) ----
+const cwd2 = mkdtempSync(path.join(tmpdir(), "pi-design-ext-preset-"));
+const ctx2 = { cwd: cwd2, mode: "json", hasUI: false, ui: {}, waitForIdle: async () => {}, isIdle: () => true, hasPendingMessages: () => false };
+
+await check("design_preset list returns the catalog", async () => {
+	const result = await tools.get("design_preset").execute("t6", { action: "list" }, undefined, undefined, ctx);
+	assert.match(result.content[0].text, /Built-in presets \(standard token names across all\):/);
+	assert.match(result.content[0].text, /material3/);
+	assert.match(result.content[0].text, /spectrum/);
+});
+
+await check("/design --preset carbon applies preset + sends brief", async () => {
+	await commands.get("design").handler("--preset carbon 一个登录页", ctx2);
+	const designMd = readFileSync(path.join(cwd2, ".design", "DESIGN.md"), "utf8");
+	assert.ok(designMd.startsWith(readFileSync(path.resolve("presets/carbon.md"), "utf8")), "DESIGN.md = carbon preset");
+	assert.ok(existsSync(path.join(cwd2, ".design", "tokens.css")), "tokens.css written");
+	assert.match(readFileSync(path.join(cwd2, ".design", "tokens.css"), "utf8"), /--color-primary/);
+	const state = JSON.parse(readFileSync(path.join(cwd2, ".design", "state.json"), "utf8"));
+	assert.equal(state.preset, "carbon");
+	assert.match(sent[sent.length - 1], /built-in preset `carbon`/);
+	assert.match(sent[sent.length - 1], /## Design brief\n一个登录页\n/, "brief carries the text, not the flag");
+});
+
+await check("design_preset apply refuses without force", async () => {
+	const before = readFileSync(path.join(cwd2, ".design", "DESIGN.md"), "utf8");
+	const result = await tools.get("design_preset").execute("t7", { action: "apply", id: "primer" }, undefined, undefined, ctx2);
+	assert.ok(result.content[0].text.startsWith("design_preset failed:"), result.content[0].text);
+	assert.equal(readFileSync(path.join(cwd2, ".design", "DESIGN.md"), "utf8"), before, "DESIGN.md unchanged");
+});
+
+await check("design_preset apply force replaces + backs up", async () => {
+	const before = readFileSync(path.join(cwd2, ".design", "DESIGN.md"), "utf8");
+	const result = await tools.get("design_preset").execute("t8", { action: "apply", id: "primer", force: true }, undefined, undefined, ctx2);
+	assert.match(result.content[0].text, /Applied preset Primer \(GitHub, MIT\)/);
+	assert.match(result.content[0].text, /Previous DESIGN\.md kept as .*\.bak/);
+	assert.ok(existsSync(path.join(cwd2, ".design", "DESIGN.md.bak")), "DESIGN.md.bak exists");
+	assert.equal(readFileSync(path.join(cwd2, ".design", "DESIGN.md.bak"), "utf8"), before, "backup = old carbon file");
+	const state = JSON.parse(readFileSync(path.join(cwd2, ".design", "state.json"), "utf8"));
+	assert.equal(state.preset, "primer");
+});
+
+await check("design_preset sync regenerates tokens.css", async () => {
+	const result = await tools.get("design_preset").execute("t9", { action: "sync" }, undefined, undefined, ctx2);
+	assert.match(result.content[0].text, /tokens\.css regenerated/);
+});
+
+await check("/design --preset with unknown id leaves state untouched", async () => {
+	const before = readFileSync(path.join(cwd2, ".design", "state.json"), "utf8");
+	const sentBefore = sent.length;
+	await commands.get("design").handler("--preset nope x", ctx2);
+	assert.equal(sent.length, sentBefore, "no message sent");
+	assert.equal(readFileSync(path.join(cwd2, ".design", "state.json"), "utf8"), before, "state unchanged (preset still primer)");
+});
+
+await check("plain /design clears preset + prompt lists built-in presets", async () => {
+	await commands.get("design").handler("另一个需求", ctx2);
+	const state = JSON.parse(readFileSync(path.join(cwd2, ".design", "state.json"), "utf8"));
+	assert.ok(state.preset === undefined, "state.preset absent/undefined");
+	assert.match(sent[sent.length - 1], /BUILT-IN PRESET/);
+});
+
 events.get("session_shutdown")({ type: "session_shutdown", reason: "quit" }, ctx);
 await new Promise((r) => setTimeout(r, 200));
 rmSync(cwd, { recursive: true, force: true });
+rmSync(cwd2, { recursive: true, force: true });
 console.log(results.join("\n"));
 console.log(failed ? "SMOKE-EXTENSION: FAILED" : "SMOKE-EXTENSION: ALL PASS");
 if (failed) process.exit(1);

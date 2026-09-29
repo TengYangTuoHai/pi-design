@@ -10,6 +10,7 @@
   "files": [
     "extensions",
     "dsh",
+    "presets",
     "README.md",
     "LICENSE"
   ],
@@ -47,6 +48,7 @@
     "smoke:designmd": "node scripts/smoke-designmd.mjs",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
     "smoke:playground": "node scripts/smoke-playground.mjs",
-    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd && npm run smoke:dsh && npm run smoke:playground"
+    "smoke": "npm run smoke:server && npm run smoke:shot && npm run smoke:extension && npm run smoke:review && npm run smoke:designmd && npm run smoke:dsh && npm run smoke:playground",
+    "check:presets": "node scripts/check-presets.mjs"
   }
 }

@@ -2,6 +2,7 @@
  * Workflow state-machine prompts. This file is the single home of the
  * "business logic" that the model executes; the extension only wires tools.
  */
+import { presetCatalog } from "./presets.ts";
 import type { DesignConfig, DesignState, DesignTarget } from "./types.ts";
 
 const TARGET_NOTES: Record<DesignTarget, string> = {
@@ -49,6 +50,15 @@ export const IMPLEMENT_TARGET_RULES: Record<DesignTarget, string> = {
  * They are only present in the system prompt while the tools are active,
  * which keeps normal coding sessions unpolluted (see pi.setActiveTools).
  */
+/**
+ * How to read element annotations. Review hosts (Pi review page, DSH
+ * playground) serialize pinned comments into the verdict text as an
+ * "Element annotations (screen · selector · text):" block; the selector comes
+ * from the motion.js picker and is unique within that screen.
+ */
+export const ANNOTATION_GUIDELINE =
+	"Review feedback may contain an \"Element annotations (screen · selector · text):\" block: each numbered entry names a screen file under .design/prototype/, a CSS selector unique within that screen, and the element's visible text, followed by the note (→ …). Locate exactly that element (document.querySelector semantics) and apply the note to it; keep changes scoped to the annotated elements unless the general comment asks for more.";
+
 export const RENDER_TOOL_GUIDELINES = [
 	"After design_render returns, actually look at the screenshot: check alignment, visual hierarchy, whitespace, cross-screen consistency, brand consistency with .design/DESIGN.md, and AI-tells (dull gradients, emoji overuse, cookie-cutter cards). Fix what you find, then re-render.",
 	"Screenshots show the settled state; to verify motion, render again with atMs (e.g. 150) for a mid-animation frame and compare against the ## Motion inventory in DESIGN.md.",
@@ -67,6 +77,33 @@ export const STATUS_TOOL_GUIDELINES = [
 	"A user message arriving after REVIEW is the review verdict: explicit approval → design_status {\"stage\":\"implement\"} then implement to spec; comments/rejection → design_status {\"stage\":\"build\"} and revise per the feedback.",
 	"IMPLEMENT iron rules: .design/prototype + tokens.css are the spec; when the implementation conflicts with the prototype, fix the implementation, never the prototype; after each screen, self-check against that screen's latest screenshot in .design/shots/ (if you cannot view images, do a token-by-token code audit instead and say so); when everything is done, finish with design_status {\"stage\":\"done\"}.",
 ];
+
+export const PRESET_TOOL_GUIDELINES = [
+	"Follow the BRIEF identity rules: apply a built-in preset only when the user gave no design direction and the project has no identity of its own; never pass force unless the user explicitly asked to replace DESIGN.md.",
+	"After any edit to the DESIGN.md front matter, call design_preset {\"action\":\"sync\"} to regenerate tokens.css deterministically instead of hand-editing tokens.css.",
+];
+
+/**
+ * The BRIEF-stage rule for where the design identity comes from. Built-in
+ * presets (presets/index.json) are the fallback when the user gave no design
+ * direction, so a brief like "a todo app" still gets a coherent, big-company
+ * grade identity instead of ad-hoc defaults.
+ */
+export function identitySource(state: DesignState): string {
+	if (state.preset) {
+		return `The user chose the built-in preset \`${state.preset}\` (/design --preset); it is already in .design/DESIGN.md + tokens.css. Use it as the identity. You may adapt values the brief explicitly asks for (e.g. a brand primary color) but never rename or remove tokens; after any front-matter edit regenerate tokens.css with design_preset {"action":"sync"}.`;
+	}
+	const catalog = presetCatalog();
+	return [
+		"1. .design/DESIGN.md already exists → it is the identity; never replace it.",
+		"2. A DESIGN.md at the project root → import it into .design/ (see above).",
+		"3. The target project already has a design system in code (Tailwind theme, CSS custom properties, a theme/tokens file) → derive .design/DESIGN.md from it so the design matches the product.",
+		"4. The brief names a visual direction (brand, palette, style, reference product) → author a custom DESIGN.md that follows it.",
+		catalog
+			? `5. Otherwise (no design direction at all) → pick the best-fitting BUILT-IN PRESET below and apply it with design_preset {"action":"apply","id":"<id>"} — it writes .design/DESIGN.md + tokens.css. Say which preset you picked and why in one line, and record it as an \`<!-- assumption: preset=<id> — <reason> -->\` comment in each screen. Presets share identical token names, so pages use var(--color-primary), var(--type-body-md-size), … regardless of the preset. If the preset's fonts come from Google Fonts, every screen links that stylesheet in <head> (design_preset prints the URL).\n${catalog}`
+			: "5. Otherwise → author sensible defaults yourself.",
+	].join("\n");
+}
 
 /**
  * The initial workflow prompt sent by /design via pi.sendUserMessage().
@@ -89,6 +126,9 @@ ${brief}
 - .design/tokens.css — DERIVED from the DESIGN.md front matter (the CSS projection below); front matter wins on any conflict
 - .design/config.json — target: ${config.target} (${TARGET_NOTES[config.target]}), viewport: ${config.viewport.width}x${config.viewport.height}${extraViewports ? `, extra check viewports: ${extraViewports}` : ""}
 - Existing screens: ${screens}
+
+### Design identity source (decide during BRIEF, first match wins)
+${identitySource(state)}
 
 ### DESIGN.md format (normative)
 \`\`\`
@@ -152,6 +192,7 @@ ${IMPLEMENT_TARGET_RULES[config.target]}
 ## Stage discipline
 - Every stage transition must be persisted (design_status).
 - After REVIEW, user messages = review verdict (approval → IMPLEMENT; comments → BUILD).
+- ${ANNOTATION_GUIDELINE}
 - /design <new brief> resets to BRIEF; /design stop ends the workflow.
 
 Start from BRIEF now.`;
@@ -171,6 +212,7 @@ export function stageGuideline(state: DesignState, config: DesignConfig): string
 		".design/DESIGN.md is authoritative (DESIGN.md spec: front matter = normative tokens, prose = rationale); tokens.css is its CSS projection — keep both in sync.",
 		"Motion is part of the design: durations/easings via var(--motion-*) only, declarative CSS/WAAPI animations only, screens include ../motion.js (playback runtime), prefers-reduced-motion fallback, inventory in ## Motion; verify mid-animation with design_render atMs.",
 		"A user message after REVIEW is the review verdict: approval → design_status {\"stage\":\"implement\"}; comments → design_status {\"stage\":\"build\"}.",
+		ANNOTATION_GUIDELINE,
 		"IMPLEMENT: .design/prototype + tokens.css are the spec; on conflict fix the implementation, not the prototype; finish with design_status {\"stage\":\"done\"}.",
 	];
 	if (state.scope === "component") {
@@ -208,6 +250,9 @@ export function gateDecisionMessage(
 	return [
 		`[design review] The user rejected round ${round}.`,
 		comment ? `Reason: ${comment}` : "(no comment given; identify obvious problems yourself, or ask the user what specifically displeased them)",
+		comment?.includes("Element annotations (") ? ANNOTATION_GUIDELINE : "",
 		"Back to BUILD: revise the affected screens in .design/prototype per the feedback (still consuming tokens.css only), re-run SELF-REVIEW (design_render, ≤3 rounds/screen), then call design_review to submit again.",
-	].join("\n");
+	]
+		.filter(Boolean)
+		.join("\n");
 }

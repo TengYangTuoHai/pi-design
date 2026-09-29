@@ -41,6 +41,8 @@ export interface DesignState {
 	/** Screen files relative to .design/prototype/, e.g. "screens/login.html". */
 	screens: string[];
 	reviewRound: number;
+	/** Built-in DESIGN.md preset id applied to this workflow (presets/index.json), if any. */
+	preset?: string | undefined;
 	/** Stable review-gate token: the review URL stays fixed across rounds. */
 	reviewToken?: string | undefined;
 	updatedAt: string;
@@ -55,7 +57,7 @@ export interface DesignPaths {
 	shotsDir: string;
 }
 
-export const DESIGN_TOOL_NAMES = ["design_render", "design_review", "design_status"] as const;
+export const DESIGN_TOOL_NAMES = ["design_render", "design_review", "design_status", "design_preset"] as const;
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 390, height: 844 };
 
@@ -148,6 +150,7 @@ export function loadState(cwd: string): DesignState {
 		brief: typeof obj.brief === "string" ? obj.brief : undefined,
 		screens,
 		reviewRound: typeof obj.reviewRound === "number" ? obj.reviewRound : 0,
+		preset: typeof obj.preset === "string" ? obj.preset : undefined,
 		reviewToken: typeof obj.reviewToken === "string" ? obj.reviewToken : undefined,
 		updatedAt: typeof obj.updatedAt === "string" ? obj.updatedAt : new Date().toISOString(),
 	};

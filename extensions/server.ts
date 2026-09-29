@@ -107,7 +107,7 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 			return `<figure class="screen" data-screen="${screen}">
 				<figcaption>
 					<span>${label} <span class="dim">${screen}</span></span>
-					<span class="tools">${replayBtn}${shotBtn}<a class="tool" href="${src}" target="_blank" rel="noopener">↗ 新标签</a></span>
+					<span class="tools"><button class="tool ann" title="点选元素添加批注（Esc 取消）">✎ 批注</button>${replayBtn}${shotBtn}<a class="tool" href="${src}" target="_blank" rel="noopener">↗ 新标签</a></span>
 				</figcaption>
 				<div class="sizer">
 					<div class="frame"><iframe src="${src}" loading="lazy"></iframe></div>
@@ -133,7 +133,7 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 	:root { color-scheme: dark; }
 	* { box-sizing: border-box; }
 	body { margin:0; font: 14px/1.6 -apple-system, "SF Pro Text", "Segoe UI", sans-serif; background:#16181d; color:#e8eaed; }
-	header { position:sticky; top:0; z-index:2; display:flex; gap:14px; align-items:center; padding:10px 20px; background:#1d2026; border-bottom:1px solid #2b2f37; flex-wrap:wrap; }
+	header { position:fixed; left:0; right:0; top:0; z-index:2; display:flex; gap:14px; align-items:center; padding:10px 20px; background:#1d2026; border-bottom:1px solid #2b2f37; flex-wrap:wrap; }
 	header h1 { font-size:15px; margin:0; font-weight:600; }
 	.dim { color:#9aa0a6; font-weight:400; font-size:12px; }
 	.spacer { flex:1; }
@@ -146,11 +146,23 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 	.mbtn:hover { background:#2e333d; }
 	.mbtn.active { color:#e8eaed; border-color:#6ea8fe; }
 	.mnote { font-size:11px; color:#f2cc60; }
-	main { display:flex; gap:28px; padding:24px 20px 140px; overflow-x:auto; align-items:flex-start; flex-wrap:wrap; }
-	.screen figcaption { margin:0 0 8px 2px; font-size:13px; font-weight:600; display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+	#canvas { position:fixed; left:0; right:0; top:0; bottom:0; overflow:hidden; cursor:default; background-color:#16181d; background-image:radial-gradient(#2b2f37 1px, transparent 1px); }
+	#world { position:absolute; left:0; top:0; transform-origin:0 0; }
+	.screen { position:absolute; margin:0; }
+	body.dragging { user-select:none; }
+	body.dragging #canvas { cursor:grabbing; }
+	body.panmode #canvas { cursor:grab; }
+	body.dragging #world iframe, body.panmode #world iframe { pointer-events:none; }
+	.screen figcaption { margin:0 0 8px 2px; font-size:13px; font-weight:600; display:flex; justify-content:space-between; align-items:baseline; gap:12px; cursor:move; }
 	.tools { display:flex; gap:6px; font-weight:400; }
 	.tool { background:none; border:1px solid #343946; color:#9aa0a6; border-radius:6px; padding:2px 8px; font:11px inherit; cursor:pointer; text-decoration:none; white-space:nowrap; }
 	.tool:hover, .tool.on { color:#e8eaed; border-color:#6ea8fe; }
+	.notes { flex-basis:100%; margin:0; padding:0; list-style:none; max-height:28vh; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+	.notes li { display:flex; gap:8px; align-items:center; }
+	.nidx { flex:none; min-width:18px; height:18px; padding:0 4px; border-radius:9px; background:#6ea8fe; color:#0b0c0f; font-weight:700; font-size:11px; line-height:18px; text-align:center; }
+	.nmeta { flex:none; max-width:45%; color:#9aa0a6; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+	.nnote { flex:1; min-width:0; background:#12141a; color:#e8eaed; border:1px solid #343946; border-radius:6px; padding:6px 10px; font-size:13px; font-family:inherit; }
+	.nnote:focus { outline:1px solid #6ea8fe; }
 	.sizer { overflow:hidden; }
 	.frame { border:8px solid #0b0c0f; border-radius:28px; background:#fff; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,.45); transform-origin:top left; }
 	iframe { width:100%; height:100%; border:0; display:block; background:#fff; }
@@ -174,7 +186,9 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 	<span class="dim">第 ${opts.round} 轮 · target: ${opts.target} · ${opts.screens.length} 屏</span>
 	<span class="spacer"></span>
 	<span class="presets">${presets}</span>
-	<label class="zoom">缩放 <input id="zoom" type="range" min="25" max="100" step="5" value="100"> <span id="zoomv">100%</span></label>
+	<label class="zoom">缩放 <input id="zoom" type="range" min="10" max="200" step="5" value="100"> <span id="zoomv">100%</span></label>
+	<button id="cfit" class="preset cbtn" type="button" title="缩放以显示全部屏幕 (F)">⤢ 适应</button>
+	<button id="creset" class="preset cbtn" type="button" title="清除手动摆放，恢复自动排列">⟲ 重排</button>
 	<span class="mbar">
 		<button class="mbtn" id="mreplay" type="button" title="重播所有屏的动效">▶ 重播</button>
 		<button class="mbtn" id="mpause" type="button" title="暂停 / 继续所有动画">⏸ 暂停</button>
@@ -184,34 +198,220 @@ function reviewPageHtml(opts: ReviewServerOptions, token: string): string {
 		<span class="mnote" id="mnote" style="display:none"></span>
 	</span>
 </header>
-<main>
-${frames}
-</main>
+<main id="canvas"><div id="world">${frames}</div></main>
 <footer id="bar" style="flex-wrap:wrap">
-	<span class="hint">快捷键：A 通过 · R 驳回 · / 填意见 · 1-4 切换视口预设</span>
+	<ol id="notes" class="notes" hidden></ol>
+	<span class="hint">快捷键：A 通过 · R 驳回 · / 填意见 · 1-4 切换视口预设 · F 适应 · 空格+拖动 平移 · ✎ 批注时 Esc 取消</span>
 	<textarea id="comment" placeholder="意见（驳回时建议必填；通过时可留空）"></textarea>
 	<button class="reject" id="reject">驳回 (R)</button>
 	<button class="approve" id="approve">通过 (A)</button>
 </footer>
 <script>
 const bar = document.getElementById("bar");
-let scale = 1, width = ${opts.viewport.width}, height = ${opts.viewport.height};
+const canvas = document.getElementById("canvas");
+const world = document.getElementById("world");
+let width = ${opts.viewport.width}, height = ${opts.viewport.height};
+// ---- pan/zoom canvas: view state, dots, drag, persistence ----
+const view = { x: 0, y: 0, z: 1 };
+const layout = { pos: {} }; // screen path -> { x, y } for manually placed cards
+let topZ = 1;
+function clampZ(z) {
+	return Math.min(2, Math.max(0.1, z));
+}
+function applyView() {
+	world.style.transform = "translate(" + view.x + "px, " + view.y + "px) scale(" + view.z + ")";
+	canvas.style.backgroundSize = 24 * view.z + "px " + 24 * view.z + "px";
+	canvas.style.backgroundPosition = view.x + "px " + view.y + "px";
+	document.getElementById("zoomv").textContent = Math.round(view.z * 100) + "%";
+	document.getElementById("zoom").value = Math.round(view.z * 100);
+}
+function zoomAt(cx, cy, newZ) {
+	const wx = (cx - view.x) / view.z;
+	const wy = (cy - view.y) / view.z;
+	view.z = clampZ(newZ);
+	view.x = cx - wx * view.z;
+	view.y = cy - wy * view.z;
+	applyView();
+}
+function layoutBounds() {
+	canvas.style.top = document.querySelector("header").offsetHeight + "px";
+	canvas.style.bottom = bar.offsetHeight + "px";
+}
+function autoLayout() {
+	let x = 0;
+	for (const fig of document.querySelectorAll(".screen")) {
+		if (layout.pos[fig.dataset.screen]) continue;
+		fig.style.left = x + "px";
+		fig.style.top = "0px";
+		x += fig.offsetWidth + 80;
+	}
+}
+function fit() {
+	const figs = [...document.querySelectorAll(".screen")];
+	if (figs.length === 0) {
+		applyView();
+		return;
+	}
+	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+	for (const fig of figs) {
+		minX = Math.min(minX, fig.offsetLeft);
+		minY = Math.min(minY, fig.offsetTop);
+		maxX = Math.max(maxX, fig.offsetLeft + fig.offsetWidth);
+		maxY = Math.max(maxY, fig.offsetTop + fig.offsetHeight);
+	}
+	const bw = maxX - minX;
+	const bh = maxY - minY;
+	view.z = clampZ(Math.min((canvas.clientWidth - 80) / bw, (canvas.clientHeight - 80) / bh, 1));
+	view.x = (canvas.clientWidth - bw * view.z) / 2 - minX * view.z;
+	view.y = (canvas.clientHeight - bh * view.z) / 2 - minY * view.z;
+	applyView();
+	saveSoon(); // a reload reopens what the reviewer last saw
+}
+function storeKey() {
+	return "pi-design:canvas:" + location.pathname;
+}
+function saveLayout() {
+	try {
+		localStorage.setItem(storeKey(), JSON.stringify({ view, pos: layout.pos }));
+	} catch {
+		/* storage unavailable */
+	}
+}
+let saveTimer = 0;
+function saveSoon() {
+	clearTimeout(saveTimer);
+	saveTimer = setTimeout(saveLayout, 300);
+}
+function loadLayout() {
+	let restored = false;
+	try {
+		const data = JSON.parse(localStorage.getItem(storeKey()) || "null");
+		if (data && data.pos) {
+			for (const fig of document.querySelectorAll(".screen")) {
+				const p = data.pos[fig.dataset.screen];
+				if (p) {
+					fig.style.left = p.x + "px";
+					fig.style.top = p.y + "px";
+					layout.pos[fig.dataset.screen] = { x: p.x, y: p.y };
+				}
+			}
+		}
+		if (data && data.view && isFinite(data.view.x) && isFinite(data.view.y) && isFinite(data.view.z)) {
+			view.x = data.view.x;
+			view.y = data.view.y;
+			view.z = clampZ(data.view.z);
+			restored = true;
+		}
+	} catch {
+		/* missing or corrupt storage */
+	}
+	return restored;
+}
 function apply() {
-	document.getElementById("zoomv").textContent = Math.round(scale * 100) + "%";
 	for (const fig of document.querySelectorAll(".screen")) {
 		const frame = fig.querySelector(".frame");
 		frame.style.width = width + "px";
 		frame.style.height = height + "px";
-		frame.style.transform = scale === 1 ? "none" : "scale(" + scale + ")";
 		const sizer = fig.querySelector(".sizer");
-		sizer.style.width = (width * scale + 16) + "px";
-		sizer.style.height = (height * scale + 16) + "px";
+		sizer.style.width = (width + 16) + "px";
+		sizer.style.height = (height + 16) + "px";
 	}
+	autoLayout();
 }
-document.querySelectorAll(".preset").forEach((b) => b.addEventListener("click", () => {
+document.querySelectorAll(".preset:not(.cbtn)").forEach((b) => b.addEventListener("click", () => {
 	width = +b.dataset.w; height = +b.dataset.h; apply();
 }));
-document.getElementById("zoom").addEventListener("input", (e) => { scale = +e.target.value / 100; apply(); });
+document.getElementById("zoom").addEventListener("input", (e) => {
+	const r = canvas.getBoundingClientRect();
+	zoomAt(r.width / 2, r.height / 2, +e.target.value / 100);
+	saveSoon();
+});
+document.getElementById("cfit").addEventListener("click", () => fit());
+document.getElementById("creset").addEventListener("click", () => {
+	layout.pos = {};
+	autoLayout();
+	fit();
+	saveSoon();
+});
+canvas.addEventListener("wheel", (e) => {
+	e.preventDefault();
+	if (e.ctrlKey || e.metaKey) {
+		const r = canvas.getBoundingClientRect();
+		zoomAt(e.clientX - r.left, e.clientY - r.top, view.z * Math.exp(-e.deltaY * 0.01));
+	} else {
+		view.x -= e.shiftKey ? e.deltaY : e.deltaX;
+		view.y -= e.shiftKey ? 0 : e.deltaY;
+		applyView();
+	}
+	saveSoon();
+}, { passive: false });
+// pan: empty surface with button 0, middle button anywhere, or Space pan mode
+let panDrag = null;
+canvas.addEventListener("pointerdown", (e) => {
+	const empty = e.target === canvas || e.target === world;
+	if (!(e.button === 1 || (e.button === 0 && (empty || document.body.classList.contains("panmode"))))) return;
+	e.preventDefault();
+	canvas.setPointerCapture(e.pointerId);
+	panDrag = { px: e.clientX, py: e.clientY };
+	document.body.classList.add("dragging");
+});
+canvas.addEventListener("pointermove", (e) => {
+	if (!panDrag) return;
+	view.x += e.clientX - panDrag.px;
+	view.y += e.clientY - panDrag.py;
+	panDrag.px = e.clientX;
+	panDrag.py = e.clientY;
+	applyView();
+});
+const endPan = () => {
+	if (!panDrag) return;
+	panDrag = null;
+	document.body.classList.remove("dragging");
+	saveSoon();
+};
+canvas.addEventListener("pointerup", endPan);
+canvas.addEventListener("pointercancel", endPan);
+// cards: drag by title bar, ignore presses on the embedded controls
+document.querySelectorAll(".screen figcaption").forEach((cap) => {
+	const fig = cap.closest(".screen");
+	let drag = null;
+	cap.addEventListener("pointerdown", (e) => {
+		if (e.button !== 0 || e.target.closest("button, a, input")) return;
+		e.preventDefault();
+		cap.setPointerCapture(e.pointerId);
+		drag = { px: e.clientX, py: e.clientY, moved: false };
+	});
+	cap.addEventListener("pointermove", (e) => {
+		if (!drag) return;
+		const dx = e.clientX - drag.px;
+		const dy = e.clientY - drag.py;
+		if (!drag.moved) {
+			if (Math.hypot(dx, dy) < 3) return;
+			drag.moved = true;
+			document.body.classList.add("dragging");
+			fig.style.zIndex = ++topZ;
+		}
+		fig.style.left = fig.offsetLeft + dx / view.z + "px";
+		fig.style.top = fig.offsetTop + dy / view.z + "px";
+		drag.px = e.clientX;
+		drag.py = e.clientY;
+	});
+	const endDrag = () => {
+		if (!drag) return;
+		const moved = drag.moved;
+		drag = null;
+		document.body.classList.remove("dragging");
+		if (moved) {
+			layout.pos[fig.dataset.screen] = {
+				x: parseFloat(fig.style.left) || 0,
+				y: parseFloat(fig.style.top) || 0,
+			};
+			saveSoon();
+		}
+	};
+	cap.addEventListener("pointerup", endDrag);
+	cap.addEventListener("pointercancel", endDrag);
+});
 document.querySelectorAll("button.tool[data-shot]").forEach((b) => b.addEventListener("click", () => {
 	const fig = b.closest(".screen");
 	const frame = fig.querySelector(".frame");
@@ -242,12 +442,38 @@ function postMotion(iframe, action, extra) {
 	}
 }
 window.addEventListener("message", (e) => {
-	if (e.data?.type !== "pi-design:motion-ack") return;
+	if (e.data?.type === "pi-design:motion-ack") {
+		for (const f of frameEls()) {
+			if (f.contentWindow === e.source) {
+				f.dataset.motion = "1";
+				if (e.data.action === "ready") sendMarks(f); // restore badges after reload
+				break;
+			}
+		}
+		return;
+	}
+	if (e.data?.type !== "pi-design:annotate-pick" && e.data?.type !== "pi-design:annotate-cancel") return;
+	let fig;
 	for (const f of frameEls()) {
 		if (f.contentWindow === e.source) {
-			f.dataset.motion = "1";
+			fig = f.closest(".screen");
 			break;
 		}
+	}
+	if (!fig) return;
+	const btn = fig.querySelector(".tool.ann");
+	if (btn) btn.classList.remove("on");
+	if (e.data.type === "pi-design:annotate-pick") {
+		notes.push({
+			screen: fig.dataset.screen,
+			selector: e.data.selector,
+			text: e.data.text || "",
+			tag: e.data.tag || "",
+			note: "",
+		});
+		renderNotes();
+		const inputs = document.querySelectorAll(".nnote");
+		if (inputs.length > 0) inputs[inputs.length - 1].focus();
 	}
 });
 function replayFrame(f) {
@@ -291,8 +517,105 @@ document.querySelectorAll("button.rpl").forEach((b) =>
 		if (f) replayFrame(f);
 	}),
 );
+// ---- element annotations: pin numbered notes to concrete elements ----
+const notes = []; // { screen, selector, text, tag, note }
+function frameOf(fig) {
+	return fig.querySelector(".frame iframe"); // null while the shot compare shows
+}
+function postAnnotate(iframe, action, extra) {
+	try {
+		iframe.contentWindow.postMessage({ type: "pi-design:annotate", action, ...extra }, "*");
+	} catch {
+		/* frame not ready */
+	}
+}
+function sendMarks(iframe) {
+	const fig = iframe.closest(".screen");
+	if (!fig) return;
+	const marks = [];
+	for (let i = 0; i < notes.length; i++) {
+		if (notes[i].screen === fig.dataset.screen) marks.push({ n: i + 1, selector: notes[i].selector });
+	}
+	postAnnotate(iframe, "marks", { marks });
+}
+function renderNotes() {
+	const list = document.getElementById("notes");
+	list.textContent = "";
+	list.hidden = notes.length === 0;
+	for (let i = 0; i < notes.length; i++) {
+		const note = notes[i];
+		const li = document.createElement("li");
+		const idx = document.createElement("span");
+		idx.className = "nidx";
+		idx.textContent = String(i + 1);
+		const label = note.screen.split("/").pop().replace(/\\.html$/, "");
+		const meta = document.createElement("span");
+		meta.className = "nmeta";
+		meta.textContent = note.text ? label + ' · "' + note.text + '"' : label + " · " + note.tag;
+		const input = document.createElement("input");
+		input.className = "nnote";
+		input.placeholder = "这里有什么问题？";
+		input.value = note.note;
+		input.addEventListener("input", () => {
+			note.note = input.value;
+		});
+		const del = document.createElement("button");
+		del.className = "tool ndel";
+		del.type = "button";
+		del.title = "删除";
+		del.textContent = "×";
+		del.addEventListener("click", () => {
+			notes.splice(notes.indexOf(note), 1);
+			renderNotes();
+		});
+		li.append(idx, meta, input, del);
+		list.appendChild(li);
+	}
+	for (const f of frameEls()) sendMarks(f);
+	layoutBounds();
+}
+function stopPicking() {
+	for (const b of document.querySelectorAll(".tool.ann.on")) {
+		b.classList.remove("on");
+		const iframe = frameOf(b.closest(".screen"));
+		if (iframe) postAnnotate(iframe, "cancel");
+	}
+}
+document.querySelectorAll("button.tool.ann").forEach((b) =>
+	b.addEventListener("click", () => {
+		if (b.classList.contains("on")) {
+			stopPicking();
+			return;
+		}
+		stopPicking(); // one screen picks at a time
+		const iframe = frameOf(b.closest(".screen"));
+		if (!iframe) return;
+		if (iframe.dataset.motion !== "1") {
+			const el = document.getElementById("mnote");
+			el.textContent = "该屏未接入 ../motion.js，无法点选元素";
+			el.style.display = "inline";
+			setTimeout(noteMissingRuntime, 3000);
+			return;
+		}
+		b.classList.add("on");
+		postAnnotate(iframe, "pick");
+	}),
+);
+function composeFeedback() {
+	const general = document.getElementById("comment").value.trim();
+	if (notes.length === 0) return general;
+	const lines = [];
+	if (general) lines.push(general, "");
+	lines.push("Element annotations (screen · selector · text):");
+	for (let i = 0; i < notes.length; i++) {
+		const note = notes[i];
+		lines.push(i + 1 + ". " + note.screen + " · " + note.selector + " · " + (note.text ? '"' + note.text + '"' : "(no text)"));
+		lines.push("   → " + (note.note.trim() || "(no note)"));
+	}
+	return lines.join("\\n");
+}
 function decide(action) {
-	const comment = document.getElementById("comment").value.trim();
+	const comment = composeFeedback();
 	if (action === "reject" && !comment && !confirm("未填写驳回意见，确定直接驳回？")) return;
 	for (const b of document.querySelectorAll("footer button")) b.disabled = true;
 	fetch("/${token}/decision", {
@@ -318,17 +641,33 @@ document.getElementById("approve").addEventListener("click", () => decide("appro
 document.getElementById("reject").addEventListener("click", () => decide("reject"));
 document.addEventListener("keydown", (e) => {
 	if (e.metaKey || e.ctrlKey || e.altKey) return;
+	if (e.key === "Escape" && document.querySelector(".tool.ann.on")) {
+		e.preventDefault();
+		stopPicking();
+		return;
+	}
 	const tag = document.activeElement ? document.activeElement.tagName : "";
 	if (tag === "TEXTAREA" || tag === "INPUT") return;
 	if (e.key === "a" || e.key === "A") decide("approve");
 	else if (e.key === "r" || e.key === "R") decide("reject");
 	else if (e.key === "/") { e.preventDefault(); document.getElementById("comment").focus(); }
 	else if (e.key >= "1" && e.key <= "4") {
-		const b = document.querySelectorAll(".preset")[+e.key - 1];
+		const b = document.querySelectorAll(".preset:not(.cbtn)")[+e.key - 1];
 		if (b) b.click();
+	} else if (e.key === " ") {
+		e.preventDefault(); // Space pans: hold and drag the canvas
+		document.body.classList.add("panmode");
 	}
 });
+document.addEventListener("keyup", (e) => {
+	if (e.key === " ") document.body.classList.remove("panmode");
+});
+const viewRestored = loadLayout();
 apply();
+layoutBounds();
+if (viewRestored) applyView();
+else fit();
+window.addEventListener("resize", layoutBounds);
 </script>
 </body>
 </html>`;

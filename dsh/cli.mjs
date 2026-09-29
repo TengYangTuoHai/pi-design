@@ -44,6 +44,9 @@ const { designPaths, loadConfig, loadState, saveState } = await import(
 const { writeMotionRuntime } = await import(pathToFileURL(path.join(EXTENSIONS_DIR, "motion.ts")));
 const { captureScreenshot } = await import(pathToFileURL(path.join(EXTENSIONS_DIR, "shot.ts")));
 const { lintDesignMd } = await import(pathToFileURL(path.join(EXTENSIONS_DIR, "designmd.ts")));
+const { listPresets, findPreset, presetCatalog, applyPreset, syncTokens } = await import(
+	pathToFileURL(path.join(EXTENSIONS_DIR, "presets.ts"))
+);
 const { buildWorkflowPrompt, stageGuideline } = await import(
 	pathToFileURL(path.join(EXTENSIONS_DIR, "prompt.ts"))
 );
@@ -191,7 +194,7 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 			return [
 				`<div class="card" data-src="${escapeHtml(src)}"${shot ? ` data-shot="${escapeHtml(shot)}"` : ""}>`,
 				`<h2><span class="name">${escapeHtml(name)}</span><span class="file">${escapeHtml(screen)}</span>`,
-				`<span class="actions"><a href="${escapeHtml(src)}" target="_blank" rel="noopener">↗ 全屏</a><button class="rpl" type="button" title="重播本屏动效">↺ 重播</button>${
+				`<span class="actions"><button class="ann" type="button" title="点选元素添加批注（Esc 取消）">✎ 批注</button><a href="${escapeHtml(src)}" target="_blank" rel="noopener">↗ 全屏</a><button class="rpl" type="button" title="重播本屏动效">↺ 重播</button>${
 					shot ? '<button class="cmp" type="button">📸 自查截图</button>' : ""
 				}</span></h2>`,
 				`<div class="frame"><iframe src="${escapeHtml(src)}" loading="lazy"></iframe></div>`,
@@ -210,7 +213,7 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 	:root { color-scheme: dark; }
 	* { box-sizing: border-box; }
 	body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:#111418; color:#e5e7eb; }
-	header { position:sticky; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:12px 20px; align-items:center; padding:12px 20px;
+	header { position:fixed; left:0; right:0; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:12px 20px; align-items:center; padding:12px 20px;
 		background:rgba(17,20,24,.92); backdrop-filter:blur(8px); border-bottom:1px solid #2a2f36; }
 	h1 { font-size:15px; font-weight:600; margin:0; }
 	.meta { font-size:12px; color:#9ca3af; margin-top:2px; }
@@ -224,7 +227,14 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 	.mbtn:hover { border-color:#4b5563; }
 	.mbtn.active { background:#2563eb; border-color:#2563eb; color:#fff; }
 	.mnote { font-size:11px; color:#fbbf24; }
-	.grid { display:flex; flex-wrap:wrap; gap:32px; padding:28px; align-items:flex-start; }
+	#canvas { position:fixed; left:0; right:0; overflow:hidden; background-color:#111418; background-image:radial-gradient(#2a2f36 1px, transparent 1px); background-size:24px 24px; cursor:default; }
+	#world { position:absolute; left:0; top:0; transform-origin:0 0; }
+	.card { position:absolute; }
+	.card h2 { cursor:move; }
+	body.dragging { user-select:none; }
+	body.dragging #canvas { cursor:grabbing; }
+	body.panmode #canvas { cursor:grab; }
+	body.dragging #world iframe, body.panmode #world iframe { pointer-events:none; }
 	.card h2 { font-size:13px; font-weight:600; margin:0 0 10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
 	.card h2 .file { color:#6b7280; font-weight:400; font-size:11px; }
 	.card h2 .actions { display:flex; gap:10px; margin-left:auto; }
@@ -233,7 +243,18 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 	.frame { background:#e5e7eb; border-radius:18px; padding:10px; box-shadow:0 12px 40px rgba(0,0,0,.45); border:1px solid #374151; }
 	iframe { display:block; border:0; background:#fff; border-radius:10px; }
 	.frame img { display:block; border-radius:10px; border:0; background:#fff; }
-	footer { padding:16px 20px 32px; font-size:11px; color:#6b7280; }
+	footer { padding:16px 20px 0; font-size:11px; color:#6b7280; }
+	.card h2 .actions button.ann.on { background:#2563eb; color:#fff; border-radius:999px; padding:0 8px; text-decoration:none; }
+	.fb { position:fixed; left:0; right:0; bottom:0; z-index:10; display:flex; flex-direction:column; gap:8px; padding:12px 20px; background:rgba(17,20,24,.96); border-top:1px solid #2a2f36; }
+	.fbrow { display:flex; gap:10px; align-items:flex-end; }
+	#general { flex:1; min-height:40px; resize:vertical; background:#0b0d10; color:#e5e7eb; border:1px solid #374151; border-radius:8px; padding:8px 10px; font-size:13px; font-family:inherit; }
+	.notes { margin:0; padding:0; list-style:none; max-height:28vh; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+	.notes li { display:flex; gap:8px; align-items:center; }
+	.nidx { flex:none; min-width:18px; height:18px; padding:0 4px; border-radius:9px; background:#6ea8fe; color:#0b0c0f; font-weight:700; font-size:11px; line-height:18px; text-align:center; }
+	.nmeta { flex:none; max-width:45%; color:#9ca3af; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+	.nnote { flex:1; min-width:0; background:#0b0d10; color:#e5e7eb; border:1px solid #374151; border-radius:6px; padding:6px 10px; font-size:13px; font-family:inherit; }
+	.ndel { flex:none; font-size:12px; color:#9ca3af; background:none; border:1px solid #374151; border-radius:999px; padding:2px 8px; cursor:pointer; }
+	#fbout { margin:0; max-height:20vh; overflow:auto; font:12px/1.5 ui-monospace,monospace; color:#d1d5db; background:#0b0d10; border:1px solid #374151; border-radius:8px; padding:8px 10px; white-space:pre-wrap; }
 </style>
 </head>
 <body>
@@ -241,14 +262,16 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 	<div>
 		<h1>设计稿 Playground${brief ? ` — ${escapeHtml(brief)}` : ""}</h1>
 		<div class="meta">第 ${state.reviewRound} 轮 · target ${escapeHtml(config.target)} · ${screens.length} 屏 · 生成于 ${new Date().toLocaleString("zh-CN")}
-			<br><span class="hint">审核方式：回到对话，直接回复「通过」或修改意见（本页面仅用于查看设计）</span></div>
+			<br><span class="hint">审核方式：回到对话，直接回复「通过」或修改意见；也可以用 ✎ 批注 点选元素写意见，再点 📋 复制反馈 粘贴到对话；画布：拖动空白处平移，⌘/Ctrl+滚轮缩放，拖标题栏移动屏幕，F 适应</span></div>
 	</div>
 	<div class="controls">
 		<button class="preset" data-w="375" type="button">375</button>
 		<button class="preset" data-w="390" type="button">390</button>
 		<button class="preset" data-w="768" type="button">768</button>
 		<button class="preset" data-w="1280" type="button">1280</button>
-		<label class="zoom">缩放 <input id="zoom" type="range" min="25" max="100" step="5" value="100"><span id="zoomv">100%</span></label>
+		<label class="zoom">缩放 <input id="zoom" type="range" min="10" max="200" step="5" value="100"><span id="zoomv">100%</span></label>
+		<button class="preset cbtn" id="cfit" type="button" title="缩放以显示全部屏幕 (F)">⤢ 适应</button>
+		<button class="preset cbtn" id="creset" type="button" title="清除手动摆放，恢复自动排列">⟲ 重排</button>
 		<span class="mbar">
 			<button class="mbtn" id="mreplay" type="button" title="重播所有屏的动效">▶ 重播动效</button>
 			<button class="mbtn" id="mpause" type="button" title="暂停 / 继续所有动画">⏸ 暂停</button>
@@ -259,10 +282,18 @@ function buildPlaygroundHtml({ screens, state, config, shots }) {
 		</span>
 	</div>
 </header>
-<div class="grid" id="grid">
+<div id="canvas"><div id="world">
 ${cards}
-</div>
-<footer>playground.html 由 pi-design 自动生成（每次 review 时更新）；截图对比 📸 显示模型自查用的最新渲染；动效控制 ▶/⏸/慢放 需要页面接入自动生成的 ../motion.js。</footer>
+</div></div>
+<section class="fb" id="fb">
+	<ol id="notes" class="notes" hidden></ol>
+	<div class="fbrow">
+		<textarea id="general" placeholder="整体意见（可选）"></textarea>
+		<button class="mbtn" id="copyfb" type="button">📋 复制反馈</button>
+	</div>
+	<pre id="fbout" hidden></pre>
+	<footer>playground.html 由 pi-design 自动生成（每次 review 时更新）；截图对比 📸 显示模型自查用的最新渲染；动效控制 ▶/⏸/慢放 和 ✎ 批注 需要页面接入自动生成的 ../motion.js。</footer>
+</section>
 <script>
 	var curW = ${config.viewport.width};
 	function heights(w){ return w>=1280?832:w>=768?1024:w>=390?844:812; }
@@ -272,15 +303,169 @@ ${cards}
 			var i=f.querySelector('iframe'); if(i){ i.style.width=curW+'px'; i.style.height=heights(curW)+'px'; }
 			var im=f.querySelector('img'); if(im){ im.style.width=curW+'px'; im.style.height='auto'; }
 		});
+		autoLayout(); // card widths changed: re-flow cards without a saved spot
 	}
 	function setW(w){
 		curW=w;
-		document.querySelectorAll('.preset').forEach(function(b){ b.classList.toggle('active', +b.dataset.w===w); });
+		document.querySelectorAll('.preset:not(.cbtn)').forEach(function(b){ b.classList.toggle('active', +b.dataset.w===w); });
 		applySizes();
 	}
-	document.querySelectorAll('.preset').forEach(function(b){ b.addEventListener('click', function(){ setW(+b.dataset.w); }); });
-	var grid=document.getElementById('grid'), z=document.getElementById('zoom'), zv=document.getElementById('zoomv');
-	z.addEventListener('input', function(){ zv.textContent=z.value+'%'; grid.style.zoom=z.value/100; });
+	document.querySelectorAll('.preset:not(.cbtn)').forEach(function(b){ b.addEventListener('click', function(){ setW(+b.dataset.w); }); });
+	// ---- pan/zoom canvas: dotted infinite surface, drag screens by title bar ----
+	// view {x,y,z} is the #world transform; layout.pos keeps manual card spots in
+	// localStorage (keyed by screen path) so a regenerated playground reopens
+	// roughly as left. Iframes lose pointer events only while dragging/panning.
+	var canvas=document.getElementById('canvas'), world=document.getElementById('world');
+	var z=document.getElementById('zoom'), zv=document.getElementById('zoomv');
+	var view={x:0,y:0,z:1};
+	var layout={pos:{}}; // screen path -> {x,y} in world px
+	var topZ=1, panDrag=null, cardDrag=null, spaceHeld=false;
+	var LSKEY='pi-design:canvas:'+location.pathname;
+	function clampZ(v){ return Math.min(2, Math.max(0.1, v)); }
+	function cardScreen(c){ return c.querySelector('.file').textContent; }
+	function layoutBounds(){
+		canvas.style.top = document.querySelector('header').offsetHeight+'px';
+		canvas.style.bottom = document.getElementById('fb').offsetHeight+'px';
+	}
+	function applyView(){
+		world.style.transform = 'translate('+view.x+'px,'+view.y+'px) scale('+view.z+')';
+		canvas.style.backgroundSize = (24*view.z)+'px '+(24*view.z)+'px';
+		canvas.style.backgroundPosition = view.x+'px '+view.y+'px';
+		z.value = Math.round(view.z*100);
+		zv.textContent = z.value+'%';
+	}
+	function zoomAt(cx, cy, newZ){
+		var wx=(cx-view.x)/view.z, wy=(cy-view.y)/view.z;
+		view.z = clampZ(newZ);
+		view.x = cx-wx*view.z; view.y = cy-wy*view.z;
+		applyView();
+		saveSoon();
+	}
+	function autoLayout(){
+		var x=0;
+		document.querySelectorAll('.card').forEach(function(c){
+			var p=layout.pos[cardScreen(c)];
+			if(p){ c.style.left=p.x+'px'; c.style.top=p.y+'px'; }
+			else { c.style.left=x+'px'; c.style.top='0px'; x+=c.offsetWidth+80; }
+		});
+	}
+	function fit(){
+		var any=false, minX=1/0, minY=1/0, maxX=-1/0, maxY=-1/0;
+		document.querySelectorAll('.card').forEach(function(c){
+			var x=parseFloat(c.style.left)||0, y=parseFloat(c.style.top)||0;
+			minX=Math.min(minX,x); minY=Math.min(minY,y);
+			maxX=Math.max(maxX,x+c.offsetWidth); maxY=Math.max(maxY,y+c.offsetHeight);
+			any=true;
+		});
+		if(!any) return;
+		var bw=maxX-minX, bh=maxY-minY;
+		view.z = clampZ(Math.min((canvas.clientWidth-80)/bw, (canvas.clientHeight-80)/bh, 1));
+		view.x = (canvas.clientWidth-bw*view.z)/2 - minX*view.z;
+		view.y = (canvas.clientHeight-bh*view.z)/2 - minY*view.z;
+		applyView();
+		saveSoon(); // a reload reopens what the user last saw
+	}
+	function saveNow(){
+		try { localStorage.setItem(LSKEY, JSON.stringify({view:view, pos:layout.pos})); } catch(e){ /* unavailable */ }
+	}
+	var saveTimer=null;
+	function saveSoon(){
+		if(saveTimer) clearTimeout(saveTimer);
+		saveTimer = setTimeout(function(){ saveTimer=null; saveNow(); }, 300);
+	}
+	function loadLayout(){
+		var restored=false;
+		try {
+			var v=JSON.parse(localStorage.getItem(LSKEY)||'null'), known={};
+			document.querySelectorAll('.card').forEach(function(c){ known[cardScreen(c)]=1; });
+			if(v && typeof v==='object'){
+				if(v.pos && typeof v.pos==='object'){
+					for(var k in v.pos){ if(known[k] && v.pos[k]) layout.pos[k]={x:+v.pos[k].x||0, y:+v.pos[k].y||0}; }
+				}
+				if(v.view && typeof v.view.z==='number'){ view={x:+v.view.x||0, y:+v.view.y||0, z:clampZ(v.view.z)}; restored=true; }
+			}
+		} catch(e){ /* missing or corrupted */ }
+		return restored;
+	}
+	function typing(){
+		var a=document.activeElement;
+		return !!a && (a.tagName==='INPUT' || a.tagName==='TEXTAREA');
+	}
+	z.addEventListener('input', function(){
+		zoomAt(canvas.clientWidth/2, canvas.clientHeight/2, (+z.value)/100);
+	});
+	canvas.addEventListener('wheel', function(e){
+		e.preventDefault();
+		if(e.ctrlKey || e.metaKey){
+			var r=canvas.getBoundingClientRect();
+			zoomAt(e.clientX-r.left, e.clientY-r.top, view.z*Math.exp(-e.deltaY*0.01));
+		} else {
+			view.x -= e.shiftKey ? e.deltaY : e.deltaX;
+			view.y -= e.shiftKey ? 0 : e.deltaY;
+			applyView();
+			saveSoon();
+		}
+	}, { passive:false });
+	canvas.addEventListener('pointerdown', function(e){
+		var pan = e.button===1 || (e.button===0 && spaceHeld) || (e.button===0 && (e.target===canvas || e.target===world));
+		if(pan){
+			panDrag={x:e.clientX, y:e.clientY};
+			canvas.setPointerCapture(e.pointerId);
+			document.body.classList.add('dragging');
+			e.preventDefault();
+			return;
+		}
+		if(e.button!==0) return;
+		var h=e.target.closest ? e.target.closest('.card h2') : null;
+		if(!h || e.target.closest('button, a, input')) return; // tool buttons keep working
+		var card=h.closest('.card');
+		cardDrag={ card:card, px:e.clientX, py:e.clientY, ox:parseFloat(card.style.left)||0, oy:parseFloat(card.style.top)||0, moved:false };
+		canvas.setPointerCapture(e.pointerId);
+		document.body.classList.add('dragging');
+		e.preventDefault();
+	});
+	canvas.addEventListener('pointermove', function(e){
+		if(panDrag){
+			view.x += e.clientX-panDrag.x; view.y += e.clientY-panDrag.y;
+			panDrag.x=e.clientX; panDrag.y=e.clientY;
+			applyView();
+		} else if(cardDrag){
+			var dx=e.clientX-cardDrag.px, dy=e.clientY-cardDrag.py;
+			if(!cardDrag.moved && Math.abs(dx)<3 && Math.abs(dy)<3) return; // click = no-op
+			if(!cardDrag.moved) cardDrag.card.style.zIndex = ++topZ; // bring to front
+			cardDrag.moved=true;
+			cardDrag.card.style.left=(cardDrag.ox+dx/view.z)+'px';
+			cardDrag.card.style.top=(cardDrag.oy+dy/view.z)+'px';
+		}
+	});
+	function endDrag(){
+		if(panDrag){ panDrag=null; document.body.classList.remove('dragging'); saveSoon(); }
+		if(cardDrag){
+			if(cardDrag.moved){
+				layout.pos[cardScreen(cardDrag.card)]={ x:parseFloat(cardDrag.card.style.left)||0, y:parseFloat(cardDrag.card.style.top)||0 };
+				saveSoon();
+			}
+			cardDrag=null;
+			document.body.classList.remove('dragging');
+		}
+	}
+	canvas.addEventListener('pointerup', endDrag);
+	canvas.addEventListener('pointercancel', endDrag);
+	document.addEventListener('keydown', function(e){
+		if(e.key===' ' && !typing()){ spaceHeld=true; document.body.classList.add('panmode'); e.preventDefault(); }
+		else if((e.key==='f' || e.key==='F') && !e.ctrlKey && !e.metaKey && !e.altKey && !typing()) fit();
+	});
+	document.addEventListener('keyup', function(e){
+		if(e.key===' '){ spaceHeld=false; document.body.classList.remove('panmode'); }
+	});
+	document.getElementById('cfit').addEventListener('click', fit);
+	document.getElementById('creset').addEventListener('click', function(){
+		layout.pos={};
+		autoLayout();
+		fit();
+		saveNow();
+	});
+	window.addEventListener('resize', layoutBounds);
 	// ---- motion playback: postMessage to each screen's motion.js runtime ----
 	// Screens that include the runtime ACK (incl. a "ready" ping on load) and
 	// get smooth in-place control; screens without it fall back to an iframe
@@ -293,8 +478,27 @@ ${cards}
 	}
 	window.addEventListener('message', function(e){
 		var d = e.data;
-		if (!d || d.type !== 'pi-design:motion-ack') return;
-		iframes().forEach(function(f){ if (f.contentWindow === e.source) f.dataset.motion = '1'; });
+		if (!d) return;
+		if (d.type === 'pi-design:motion-ack') {
+			iframes().forEach(function(f){ if (f.contentWindow === e.source) f.dataset.motion = '1'; });
+			if (d.action === 'ready') iframes().forEach(function(f){ if (f.contentWindow === e.source) sendMarks(f); });
+			return;
+		}
+		if (d.type === 'pi-design:annotate-pick') {
+			var card = cardOf(e.source);
+			if (!card) return;
+			var ann = card.querySelector('.ann');
+			if (ann) ann.classList.remove('on');
+			notes.push({ screen: card.querySelector('.file').textContent, selector: d.selector, text: d.text||'', tag: d.tag||'', note: '' });
+			renderNotes();
+			var inputs = document.querySelectorAll('#notes .nnote');
+			if (inputs.length) inputs[inputs.length-1].focus();
+			return;
+		}
+		if (d.type === 'pi-design:annotate-cancel') {
+			var c = cardOf(e.source), a = c && c.querySelector('.ann');
+			if (a) a.classList.remove('on');
+		}
 	});
 	function replayFrame(f){
 		if (f.dataset.motion === '1') post(f, 'replay');
@@ -328,6 +532,117 @@ ${cards}
 			if (f) replayFrame(f);
 		});
 	});
+	// ---- element annotations: pick an element in a screen, note it, copy one feedback block ----
+	// Screens that include ../motion.js answer pick/cancel/marks over
+	// postMessage (file:// iframes are cross-origin); notes live host-side only.
+	var notes = []; // { screen, selector, text, tag, note }
+	function cardOf(win){
+		var hit = null;
+		iframes().forEach(function(f){ if (f.contentWindow === win) hit = f.closest('.card'); });
+		return hit;
+	}
+	function postAnn(f, action, extra){
+		try { f.contentWindow.postMessage(Object.assign({type:'pi-design:annotate', action:action}, extra||{}), '*'); }
+		catch(e){ /* frame not ready */ }
+	}
+	function sendMarks(f){
+		var card = cardOf(f.contentWindow); if (!card) return;
+		var screen = card.querySelector('.file').textContent, marks = [];
+		notes.forEach(function(n, i){ if (n.screen === screen) marks.push({ n: i+1, selector: n.selector }); });
+		postAnn(f, 'marks', { marks: marks });
+	}
+	function composeFeedback(){
+		var general = document.getElementById('general').value.trim();
+		if (!notes.length) return general;
+		var lines = [];
+		if (general) lines.push(general, '');
+		lines.push('Element annotations (screen · selector · text):');
+		notes.forEach(function(n, i){
+			lines.push((i+1) + '. ' + n.screen + ' · ' + n.selector + ' · ' + (n.text ? '"' + n.text + '"' : '(no text)'));
+			lines.push('   → ' + (n.note.trim() || '(no note)'));
+		});
+		return lines.join('\\n');
+	}
+	function updateOut(){ document.getElementById('fbout').textContent = composeFeedback(); }
+	function renderNotes(){
+		var ol = document.getElementById('notes');
+		ol.textContent = '';
+		notes.forEach(function(n, i){
+			var label = n.screen;
+			document.querySelectorAll('.card').forEach(function(c){
+				var fl = c.querySelector('.file');
+				if (fl && fl.textContent === n.screen) label = c.querySelector('.name').textContent;
+			});
+			var li = document.createElement('li');
+			var idx = document.createElement('span'); idx.className = 'nidx'; idx.textContent = String(i+1);
+			var meta = document.createElement('span'); meta.className = 'nmeta';
+			meta.textContent = label + ' · ' + (n.text ? '"' + n.text + '"' : '<' + n.tag + '>');
+			var input = document.createElement('input');
+			input.className = 'nnote'; input.placeholder = '这里有什么问题？'; input.value = n.note;
+			input.addEventListener('input', function(){ n.note = input.value; updateOut(); });
+			var del = document.createElement('button');
+			del.className = 'ndel'; del.type = 'button'; del.title = '删除'; del.textContent = '×';
+			del.addEventListener('click', function(){ notes.splice(i, 1); renderNotes(); });
+			li.appendChild(idx); li.appendChild(meta); li.appendChild(input); li.appendChild(del);
+			ol.appendChild(li);
+		});
+		ol.hidden = notes.length === 0;
+		iframes().forEach(sendMarks);
+		updateOut();
+		layoutBounds();
+	}
+	function stopPicking(){
+		document.querySelectorAll('.ann.on').forEach(function(b){
+			b.classList.remove('on');
+			var f = b.closest('.card').querySelector('.frame iframe');
+			if (f) postAnn(f, 'cancel');
+		});
+	}
+	document.getElementById('general').addEventListener('input', updateOut);
+	document.querySelectorAll('.card .ann').forEach(function(b){
+		b.addEventListener('click', function(){
+			if (b.classList.contains('on')) { stopPicking(); return; }
+			stopPicking();
+			var f = b.closest('.card').querySelector('.frame iframe');
+			if (!f) return; // screenshot compare showing
+			if (f.dataset.motion !== '1') {
+				var el = document.getElementById('mnote');
+				el.textContent = '该屏未接入 ../motion.js，无法点选元素';
+				el.style.display = 'inline';
+				setTimeout(noteMissing, 3000);
+				return;
+			}
+			b.classList.add('on');
+			postAnn(f, 'pick');
+		});
+	});
+	document.addEventListener('keydown', function(e){
+		// focus normally stays on the playground while picking, so handle Esc here
+		if (e.key === 'Escape' && document.querySelector('.ann.on')) { e.preventDefault(); stopPicking(); }
+	});
+	document.getElementById('copyfb').addEventListener('click', function(){
+		var btn = this, text = composeFeedback();
+		var copied = function(){ btn.textContent = '✓ 已复制，粘贴到对话'; setTimeout(function(){ btn.textContent = '📋 复制反馈'; }, 2000); };
+		if (!text) { btn.textContent = '没有可复制的内容'; setTimeout(function(){ btn.textContent = '📋 复制反馈'; }, 2000); return; }
+		var fallback = function(){
+			// file:// pages may reject the async clipboard API: try execCommand
+			try {
+				var ta = document.createElement('textarea');
+				ta.value = text;
+				document.body.appendChild(ta);
+				ta.select();
+				var ok = document.execCommand('copy');
+				document.body.removeChild(ta);
+				if (ok) { copied(); return; }
+			} catch (e) { /* execCommand unavailable */ }
+			var out = document.getElementById('fbout');
+			out.hidden = false;
+			window.getSelection().selectAllChildren(out);
+			btn.textContent = '请手动复制下方文本';
+		};
+		if (navigator.clipboard) navigator.clipboard.writeText(text).then(copied, fallback);
+		else fallback();
+	});
 	document.querySelectorAll('.card').forEach(function(c){
 		var btn=c.querySelector('.cmp'); if(!btn) return;
 		var shot=c.dataset.shot, src=c.dataset.src, frame=c.querySelector('.frame'), showing=false;
@@ -340,7 +655,11 @@ ${cards}
 			applySizes();
 		});
 	});
+	layoutBounds();
+	var viewRestored = loadLayout();
 	setW(${config.viewport.width});
+	if (viewRestored) applyView(); else fit();
+	renderNotes();
 </script>
 </body>
 </html>
@@ -364,7 +683,7 @@ function writePlayground(screens, state, config) {
 function cmdStart(positional, flags) {
 	const brief = positional.join(" ").trim();
 	if (!brief) {
-		console.error("usage: pi-design start <brief...> [--scope app|component]");
+		console.error("usage: pi-design start <brief...> [--scope app|component] [--preset <id>]");
 		process.exit(2);
 	}
 	let scope;
@@ -375,22 +694,38 @@ function cmdStart(positional, flags) {
 		}
 		scope = flags.scope;
 	}
+	let presetId;
+	if (flags.preset !== undefined) {
+		const meta = findPreset(String(flags.preset));
+		if (!meta) {
+			console.error(`unknown preset "${flags.preset}" — available: ${listPresets().map((p) => p.id).join(", ")}`);
+			process.exit(2);
+		}
+		presetId = meta.id;
+	}
 	const config = loadConfig(CWD);
 	const state = loadState(CWD);
 	state.active = true;
 	state.brief = brief;
 	state.stage = "brief";
 	state.scope = scope ?? "app"; // start = reset: fresh scope unless explicitly given
+	state.preset = presetId; // start = reset: no preset unless --preset given
+	let presetBackup;
+	if (presetId) {
+		presetBackup = applyPreset(designPaths(CWD).root, presetId, { force: true }).backup;
+	}
 	saveState(CWD, state);
 	const runtime = writeMotionRuntime(designPaths(CWD).prototypeDir); // motion playback runtime for screens
 	console.log(
 		[
+			...(presetBackup ? [`Preset ${presetId} applied; previous DESIGN.md kept as ${presetBackup}`] : []),
 			"# pi-design workflow (DSH CLI mode)",
 			"",
 			"This environment has no design_* tools. Use this CLI instead:",
 			`- design_render(page, viewport?)  ->  node "${CLI_PATH}" render <page> [--viewport WxH] [--at MS]  — then view the printed screenshot with the read_image tool before judging it (--at MS captures a mid-animation frame at t=MS)`,
 			`- design_review                   ->  node "${CLI_PATH}" review  — after it returns, END YOUR TURN immediately; the browser is for viewing the design only`,
 			`- design_status {...}             ->  node "${CLI_PATH}" status --stage <stage> [--scope app|component] [--screens a,b] [--brief <text>] [--active 0|1]`,
+			`- design_preset {...}             ->  node "${CLI_PATH}" preset list | preset apply <id> [--force] | preset sync`,
 			`- review verdict                  ->  given by the user's NEXT CHAT MESSAGE: explicit approval -> status --stage implement; comments/rejection -> status --stage build + revise`,
 			`- end workflow                    ->  node "${CLI_PATH}" stop`,
 			`- motion runtime (auto-generated) ->  ${runtime}  — every screen includes <script src="../motion.js"></script> so the playground can replay/pause/slow-mo its animations`,
@@ -510,7 +845,7 @@ async function cmdReview() {
 		[
 			`Human review round ${round}: ${screens.length} screen(s) opened in the browser playground (${screens.join(", ")}).`,
 			`Playground: ${playground}`,
-			"All screens are shown in ONE page (viewport presets 375/390/768/1280, zoom, per-screen full-screen ↗, self-review-shot compare 📸, motion playback: ▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺ 重播); it regenerates on every review and can be reopened anytime with `pi-design playground`. The browser is for LOOKING at the design only — the verdict is given in this chat.",
+			"All screens are shown in ONE page (viewport presets 375/390/768/1280, zoom, per-screen full-screen ↗, self-review-shot compare 📸, motion playback: ▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺ 重播, element annotations: ✎ 批注 picks an element + note, 📋 复制反馈 copies an \"Element annotations (screen · selector · text):\" block the user may paste as the verdict); it regenerates on every review and can be reopened anytime with `pi-design playground`. The browser is for LOOKING at the design only — the verdict is given in this chat.",
 			`${lintSummary}`,
 			"WAITING FOR THE HUMAN DECISION — END YOUR TURN NOW: do not output implementation plans, do not write implementation code, do not call more tools. The user's next message is the verdict: explicit approval (通过/approve/ok) → `pi-design status --stage implement`; comments or rejection → `pi-design status --stage build` and revise per the feedback.",
 		].join("\n"),
@@ -529,7 +864,7 @@ async function cmdPlayground() {
 	const file = writePlayground(screens, state, config);
 	await openInBrowser(pathToFileURL(file).href);
 	console.log(
-		`Playground: ${file}\nAll ${screens.length} screen(s) in one page — viewport presets, zoom, per-screen full-screen (↗), self-review-shot compare (📸), motion playback (▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺; needs screens to include ../motion.js). Read-only view; the review verdict is still given in chat.`,
+		`Playground: ${file}\nAll ${screens.length} screen(s) in one page — viewport presets, zoom, per-screen full-screen (↗), self-review-shot compare (📸), motion playback (▶ 重播 / ⏸ 暂停 / ½× ¼× 慢放, per-screen ↺; needs screens to include ../motion.js, element annotations ✎ 批注 → 📋 复制反馈). Read-only view; the review verdict is still given in chat.`,
 	);
 }
 
@@ -612,6 +947,55 @@ function cmdLint() {
 	if (lint.errors > 0) process.exit(1);
 }
 
+/** Built-in DESIGN.md presets: list / apply (writes DESIGN.md + tokens.css) / sync. */
+function cmdPreset(positional, flags) {
+	const sub = positional[0];
+	if (sub === "list") {
+		console.log(`Built-in presets (standard token names across all):\n${presetCatalog()}`);
+		return;
+	}
+	if (sub === "apply") {
+		const id = positional[1];
+		if (!id) {
+			console.error(`usage: pi-design preset apply <id> [--force]  (ids: ${listPresets().map((p) => p.id).join(", ")})`);
+			process.exit(2);
+		}
+		let result;
+		try {
+			result = applyPreset(designPaths(CWD).root, id, { force: flags.force === true });
+		} catch (error) {
+			console.error(`preset failed: ${error.message}`);
+			process.exit(1);
+		}
+		const state = loadState(CWD);
+		state.preset = result.preset.id;
+		saveState(CWD, state);
+		const lines = [
+			`Applied preset ${result.preset.name} (${result.preset.company}, ${result.preset.license}) → .design/DESIGN.md + .design/tokens.css.`,
+		];
+		if (result.backup) lines.push(`Previous DESIGN.md kept as ${result.backup} (tokens.css.bak too).`);
+		lines.push(
+			result.preset.fonts.googleFontsCss
+				? `Fonts: every screen links <link rel="stylesheet" href="${result.preset.fonts.googleFontsCss}"> in <head>.`
+				: "Fonts: system stack (no web font to link).",
+			"Token names are the standard preset set (var(--color-primary), var(--type-body-md-size), …); attribution stays in DESIGN.md ## Overview.",
+		);
+		console.log(lines.join("\n"));
+		return;
+	}
+	if (sub === "sync") {
+		try {
+			console.log(`tokens.css regenerated from DESIGN.md: ${syncTokens(designPaths(CWD).root)}`);
+		} catch (error) {
+			console.error(`preset failed: ${error.message}`);
+			process.exit(1);
+		}
+		return;
+	}
+	console.error("usage: pi-design preset list | apply <id> [--force] | sync");
+	process.exit(2);
+}
+
 /** Writes a DSH skill that points at this CLI (bakes the absolute path in). */
 function cmdInstallSkill(positional) {
 	const targetDir = positional[0] ?? path.join(homedir(), ".dsh", "skills");
@@ -659,7 +1043,7 @@ function parseArgs(argv) {
 const USAGE = `usage: pi-design <command> [args]
 
 commands:
-  start <brief...> [--scope app|component]
+  start <brief...> [--scope app|component] [--preset <id>]
                                     reset the workflow and print the full state machine
                                     (component scope: design ONLY the requested component)
   render <page> [--viewport WxH] [--at MS]
@@ -671,6 +1055,7 @@ commands:
   playground                        (re)generate + open the playground read-only view
   status [--stage S] [--scope app|component] [--screens a,b] [--brief T] [--active 0|1]
                                     read/update .design/state.json (+ stage rules)
+  preset list|apply <id> [--force]|sync   built-in DESIGN.md presets (Material 3, Fluent 2, Carbon, Primer, Spectrum)
   stop                              end the workflow
   lint                              DESIGN.md mechanical lint report
   install-skill [dir]               write a DSH SKILL.md pointing at this CLI`;
@@ -698,6 +1083,9 @@ switch (command) {
 		break;
 	case "lint":
 		cmdLint();
+		break;
+	case "preset":
+		cmdPreset(positional, flags);
 		break;
 	case "install-skill":
 		cmdInstallSkill(positional);

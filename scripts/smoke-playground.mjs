@@ -142,6 +142,119 @@ try {
 		await page.waitForTimeout(300);
 	});
 
+	await check("zoom slider scales the world", async () => {
+		await page.locator("#zoom").fill("50");
+		assert.match(await page.locator("#world").evaluate((el) => el.style.transform), /scale\(0\.5\)/);
+	});
+
+	await check("title-bar drag moves the screen in world px", async () => {
+		const before = await page.locator('.card:has(.name:text-is("home"))').evaluate((el) => parseFloat(el.style.left));
+		const box = await page.locator('.card:has(.name:text-is("home")) .name').boundingBox();
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		for (let i = 1; i <= 5; i++) await page.mouse.move(box.x + box.width / 2 + (100 * i) / 5, box.y + box.height / 2 + (50 * i) / 5);
+		await page.mouse.up();
+		const after = await page.locator('.card:has(.name:text-is("home"))').evaluate((el) => parseFloat(el.style.left));
+		assert.ok(Math.abs(after - before - 200) <= 2, `home left ${before} -> ${after}, expected +200 world px (+100 screen / z 0.5)`);
+	});
+
+	await check("background drag pans the view", async () => {
+		const tx = () => page.locator("#world").evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).e);
+		const before = await tx();
+		const cb = await page.locator("#canvas").boundingBox();
+		const fb = await page.locator("#fb").boundingBox();
+		const px = cb.x + cb.width - 20; // 20 px from the right edge
+		const py = fb.y - 20; // 20 px above the feedback bar = empty canvas
+		await page.mouse.move(px, py);
+		await page.mouse.down();
+		for (let i = 1; i <= 5; i++) await page.mouse.move(px - (120 * i) / 5, py);
+		await page.mouse.up();
+		const after = await tx();
+		assert.ok(Math.abs(after - before + 120) <= 2, `translate x ${before} -> ${after}, expected -120`);
+	});
+
+	await check("fit shows every screen", async () => {
+		await page.click("#cfit");
+		const cb = await page.locator("#canvas").boundingBox();
+		const rects = await page.locator(".card").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+		for (const r of rects) {
+			assert.ok(
+				r.left >= cb.x - 1 && r.right <= cb.x + cb.width + 1 && r.top >= cb.y - 1 && r.bottom <= cb.y + cb.height + 1,
+				`card rect ${r.left},${r.top} -> ${r.right},${r.bottom} outside canvas ${cb.x},${cb.y} -> ${cb.x + cb.width},${cb.y + cb.height}`,
+			);
+		}
+	});
+
+	await check("layout persists across reload", async () => {
+		const box = await page.locator('.card:has(.name:text-is("home")) .name').boundingBox();
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		for (let i = 1; i <= 5; i++) await page.mouse.move(box.x + box.width / 2 + (60 * i) / 5, box.y + box.height / 2);
+		await page.mouse.up();
+		const before = await page.locator('.card:has(.name:text-is("home"))').evaluate((el) => el.style.left);
+		await page.waitForTimeout(400); // debounced save
+		await page.reload({ waitUntil: "load" });
+		await page.waitForTimeout(600); // iframes + runtime + layout restore
+		const after = await page.locator('.card:has(.name:text-is("home"))').evaluate((el) => el.style.left);
+		assert.equal(after, before);
+		await page.click("#cfit"); // annotation checks start from a fitted view
+	});
+
+	// Playwright can evaluate inside cross-origin file:// frames.
+	const homeFrame = () => page.frames().find((f) => f.url().includes("home.html"));
+
+	await check("✎ picks an element and lists a numbered note", async () => {
+		await page.click('.card:has(.name:text-is("home")) .ann');
+		assert.ok(
+			await page.locator('.card:has(.name:text-is("home")) .ann').evaluate((el) => el.classList.contains("on")),
+		);
+		await page.frameLocator('.card:has(.name:text-is("home")) iframe').locator("h1").click();
+		await page.waitForFunction(() => document.querySelectorAll("#notes li").length === 1, undefined, { timeout: 3000 });
+		assert.equal(await page.locator(".ann.on").count(), 0);
+		for (let i = 0; i < 20; i++) {
+			const marks = await homeFrame().evaluate(() => document.querySelectorAll("[data-pi-design-overlay] [data-mark]").length);
+			if (marks >= 2) return; // outline + numbered badge
+			await page.waitForTimeout(50);
+		}
+		throw new Error("expected >=2 [data-mark] badge nodes in the home frame");
+	});
+
+	await check("Esc cancels picking", async () => {
+		await page.click('.card:has(.name:text-is("home")) .ann');
+		await page.keyboard.press("Escape");
+		assert.equal(await page.locator(".ann.on").count(), 0);
+	});
+
+	await check("runtime-less screen cannot pick", async () => {
+		await page.click('.card:has(.name:text-is("plain")) .ann');
+		assert.match(await page.locator("#mnote").innerText(), /无法点选/);
+		assert.equal(
+			await page.locator('.card:has(.name:text-is("plain")) .ann').evaluate((el) => el.classList.contains("on")),
+			false,
+		);
+	});
+
+	await check("feedback text composes general + annotations", async () => {
+		await page.locator(".nnote").fill("标题太淡");
+		await page.locator("#general").fill("整体偏暗");
+		const text = await page.locator("#fbout").textContent();
+		assert.match(
+			text,
+			/^整体偏暗\n\nElement annotations \(screen · selector · text\):\n1\. screens\/home\.html · .+ · "home"\n   → 标题太淡$/,
+		);
+	});
+
+	await check("× removes the note and its badge", async () => {
+		await page.click(".ndel");
+		assert.equal(await page.locator("#notes li").count(), 0);
+		for (let i = 0; i < 20; i++) {
+			const marks = await homeFrame().evaluate(() => document.querySelectorAll("[data-mark]").length);
+			if (marks === 0) return;
+			await page.waitForTimeout(50);
+		}
+		throw new Error("expected [data-mark] badges to be cleared in the home frame");
+	});
+
 	await check("no page errors", () => assert.deepEqual(pageErrors, []));
 } finally {
 	await browser.close();
